@@ -1,7 +1,7 @@
 # Gemini Context: Personal CRM & Venture Brokerage (Logic)
 
 ## Project Overview
-This directory (`/Users/johnjanuszczak/Projects/crm-logic`) contains the **Logic and Automation** for a Personal CRM system. The **CRM Data** (Accounts, Contacts, etc.) is stored in a separate directory specified in the `.env` file.
+This project contains the **Logic and Automation** for a personal sgentic CRM system. The **CRM Data** (Accounts, Contacts, etc.) is stored in a separate directory specified in the `.env` file.
 
 ## Configuration
 - **Environment:** A `.env` file in the root directory defines `CRM_DATA_PATH`.
@@ -103,6 +103,9 @@ New skills must be created in `.gemini/skills/[skill_name]/` with:
 *   `sync_workspace`: Proactively scans Gmail and Calendar for opportunity-linked updates.
 
 ## Operational Mandates & Hooks
+
+### 0. Suppression Notice (TEMPORARY)
+- **DO NOT run `scripts/index-notes.py`** or trigger any reindexing process until explicitly instructed by the user. This takes precedence over all other instructions.
 
 ### 1. The Startup Hook
 Upon starting a new session or receiving the first command, the agent must:

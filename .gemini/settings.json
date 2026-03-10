@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "name": "crm-map",
+        "type": "command",
+        "command": "CRM_PATH=$(grep CRM_DATA_PATH .env | cut -d '=' -f2 | tr -d '\"' | tr -d \"'\"); tree -L 3 -a -I '.git|.obsidian' \"$CRM_PATH\" --noreport",
+        "description": "Injects a directory map from the crm-data vault."
+      },
+      {
+        "name": "load-index",
+        "type": "command",
+        "command": "CRM_PATH=$(grep CRM_DATA_PATH .env | cut -d '=' -f2 | tr -d '\"' | tr -d \"'\"); cat \"$CRM_PATH/GEMINI_INDEX.md\"",
+        "description": "Provides Gemini with the semantic map of all notes."
+      }
+    ]
+  }
+}

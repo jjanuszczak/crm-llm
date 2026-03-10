@@ -68,7 +68,10 @@ This project contains the **Logic and Automation** for a personal sgentic CRM sy
     stage: "Seed" | "Series A" | etc.
     target-raise: Number (USD)
     valuation-cap: Number (USD)
+    pitch-deck-url: "URL"
+    google-drive-url: "URL"
     date-sourced: YYYY-MM-DD
+    date-modified: YYYY-MM-DD
     ```
 
 ### 5. Tasks

@@ -8,6 +8,7 @@ target-raise: 0
 currency: "USD"
 valuation-cap: 0
 pitch-deck-url: "URL"
+google-drive-url: "URL"
 date-sourced: YYYY-MM-DD
 date-modified: YYYY-MM-DD
 ---

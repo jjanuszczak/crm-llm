@@ -103,23 +103,13 @@ def get_files_with_frontmatter(directory):
 
 # --- Data Aggregation Functions ---
 
-def aggregate_opportunities(opportunities_data):
-    """Aggregates active opportunities into a Markdown table format."""
-    table_rows = []
-    
-    # Define a far-future date for sorting purposes
-    FAR_FUTURE_DATE = datetime(9999, 12, 31).date()
+def create_opportunities_table(opportunities):
+    """Creates a Markdown table for a list of opportunities."""
+    if not opportunities:
+        return "None found."
 
-    # Filter for active opportunities and sort by probability (desc) and close-date (asc)
-    active_opportunities = sorted(
-        [o for o in opportunities_data if o['frontmatter'].get('is-active', False)],
-        key=lambda x: (
-            x['frontmatter'].get('probability', 0), 
-            x['frontmatter'].get('close-date') if x['frontmatter'].get('close-date') is not None else FAR_FUTURE_DATE
-        )
-    )
-    
-    for opp in active_opportunities:
+    table_rows = []
+    for opp in opportunities:
         fm = opp['frontmatter']
         name = fm.get('opportunity-name', 'N/A')
         
@@ -127,22 +117,43 @@ def aggregate_opportunities(opportunities_data):
         account = str(fm.get('account', 'N/A')).replace('[[', '').replace(']]', '')
         
         stage = fm.get('stage', 'N/A')
-        probability = f"{str(fm.get('probability', 0))}%" # Ensure probability is string for f-string
+        probability = f"{str(fm.get('probability', 0))}%"
         close_date = fm.get('close-date', 'N/A')
         
         # Create a wikilink for the opportunity name (without alias)
         rel_path = os.path.relpath(opp['file_path'], PROJECT_ROOT)
         link_target = os.path.splitext(rel_path)[0]
-        name_link = f"[[{link_target}]]" # Simplified link
+        name_link = f"[[{link_target}]]"
         
         table_rows.append(f"| {name_link} | {account} | {stage} | {probability} | {close_date} |")
-
-    if not table_rows:
-        return "No active opportunities found."
 
     header = "| Opportunity | Account | Stage | Probability | Close Date |\n"
     separator = "| :--- | :--- | :--- | :--- | :--- |\n"
     return header + separator + "\n".join(table_rows)
+
+def aggregate_opportunities(opportunities_data):
+    """Splits active opportunities into Engaged (closed-won) and Pipeline (others)."""
+    # Define a far-future date for sorting purposes
+    FAR_FUTURE_DATE = datetime(9999, 12, 31).date()
+
+    # Filter for active opportunities
+    active_opportunities = [o for o in opportunities_data if o['frontmatter'].get('is-active', False)]
+    
+    # Sort by probability (desc) and close-date (asc)
+    sorted_opps = sorted(
+        active_opportunities,
+        key=lambda x: (
+            x['frontmatter'].get('probability', 0), 
+            x['frontmatter'].get('close-date') if x['frontmatter'].get('close-date') is not None else FAR_FUTURE_DATE
+        ),
+        reverse=True # Sort probability desc
+    )
+    
+    # Separate into Engaged and Pipeline
+    engaged = [o for o in sorted_opps if o['frontmatter'].get('stage') == 'closed-won']
+    pipeline = [o for o in sorted_opps if o['frontmatter'].get('stage') != 'closed-won']
+
+    return create_opportunities_table(engaged), create_opportunities_table(pipeline)
 
 def aggregate_tasks(tasks_data):
     """Aggregates todo/in-progress tasks into a Markdown table format."""
@@ -191,18 +202,13 @@ def aggregate_tasks(tasks_data):
 def synthesize_insights(activities_data):
     """
     Synthesizes strategic insights from recent activities.
-    For now, this will return a hardcoded list of recent insights.
-    Ideally, this would parse activity summaries for keywords/sentiment.
     """
-    # Get activities from the last 7 days
-    # (Note: Using datetime.now() for current date for consistent behavior with the dashboard timestamp)
     seven_days_ago = datetime.now().date() - timedelta(days=7)
     recent_activities = [
         a for a in activities_data 
         if isinstance(a['frontmatter'].get('date'), date) and a['frontmatter']['date'] >= seven_days_ago
     ]
 
-    # These are insights derived from the manual run, for now.
     insights = [
         "Example Bank Opportunity is Hot: Ghazal's team is actively looking at the Philippines corridor and is already speaking with other partners. The recent email exchange indicates high urgency and a need to move quickly.",
         "Example Fintech Pre-Series A in Play: The Example Fintech opportunity is moving forward with updated investment materials.",
@@ -215,11 +221,9 @@ def synthesize_insights(activities_data):
 
     if not recent_activities and not insights:
         return "No new strategic insights identified from recent activities."
-    elif not recent_activities: # Use existing insights if no new activities to analyze
+    elif not recent_activities:
         return "Generated insights (from last analysis):\n" + "\n".join(f"*   {i}" for i in insights)
     else:
-        # Placeholder for future dynamic insight generation based on recent_activities
-        # For now, just return the hardcoded ones and mention recent activities
         activity_summaries = [f"Found activity '{os.path.basename(a['file_path'])}' on {a['frontmatter'].get('date').strftime('%Y-%m-%d')}." for a in recent_activities]
         return "Recent activities indicate potential developments. (Dynamic insight generation to be implemented).\n\n" + \
                "Details of recent activities:\n" + "\n".join(f"*   {s}" for s in activity_summaries) + "\n\n" + \
@@ -227,13 +231,14 @@ def synthesize_insights(activities_data):
                "\n".join(f"*   {i}" for i in insights)
 
 
-def generate_dashboard_content(opportunities_table, tasks_table, insights_text):
+def generate_dashboard_content(engaged_table, pipeline_table, tasks_table, insights_text):
     """Assembles the full Markdown content for DASHBOARD.md."""
     current_date = datetime.now().strftime("%Y-%m-%d")
     
     content = f"# CRM Dashboard\n\n"
     content += f"**Last Updated:** {current_date}\n\n"
-    content += f"## Active Opportunities\n\n{opportunities_table}\n\n"
+    content += f"## Engaged Opportunities\n\n{engaged_table}\n\n"
+    content += f"## Active Pipeline\n\n{pipeline_table}\n\n"
     content += f"## Upcoming Tasks\n\n{tasks_table}\n\n"
     content += f"## Strategic Insights\n\n{insights_text}\n"
     
@@ -246,7 +251,7 @@ def main():
 
     # 1. Aggregate Opportunities
     opportunities_data = get_files_with_frontmatter(OPPORTUNITIES_DIR)
-    opportunities_table = aggregate_opportunities(opportunities_data)
+    engaged_table, pipeline_table = aggregate_opportunities(opportunities_data)
 
     # 2. Aggregate Tasks
     tasks_data = get_files_with_frontmatter(TASKS_DIR)
@@ -257,7 +262,7 @@ def main():
     insights_text = synthesize_insights(activities_data)
 
     # 4. Generate and write Dashboard content
-    dashboard_content = generate_dashboard_content(opportunities_table, tasks_table, insights_text)
+    dashboard_content = generate_dashboard_content(engaged_table, pipeline_table, tasks_table, insights_text)
     
     with open(DASHBOARD_PATH, 'w', encoding='utf-8') as f:
         f.write(dashboard_content)

@@ -122,6 +122,7 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
 *   `create_task`: Manages actionable follow-ups and deadlines.
 *   `update_dashboard`: Aggregates vault data into `DASHBOARD.md`.
 *   `sync_workspace`: Proactively scans Gmail and Calendar for opportunity-linked updates.
+*   `sync_google_tasks`: Bidirectional sync between local CRM and Google Tasks using GWS CLI.
 
 ## Operational Mandates & Hooks
 

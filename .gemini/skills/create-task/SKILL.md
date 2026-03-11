@@ -17,7 +17,7 @@ Creates a new task file in the `CRM_DATA_PATH/Tasks/` directory. This skill ensu
     *   Verify the file does not already exist in the `CRM_DATA_PATH/Tasks/` directory.
 
 3.  **Template Population:**
-    *   Load `Templates/task-template.md`.
+    *   Load `templates/task-template.md`.
     *   Replace placeholders (`{{Task Name}}`, `{{Account}}`, `{{YYYY-MM-DD}}`, etc.) with provided arguments.
     *   **Email Link:** If `--email-link` is provided, populate the `email-link` field in the frontmatter.
     *   **Meeting Notes:** If `--meeting-notes` is provided, populate the `meeting-notes` field in the frontmatter.

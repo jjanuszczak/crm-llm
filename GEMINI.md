@@ -20,7 +20,7 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
 
 ## Directory Structure (Logic)
 - `.gemini/skills/`: Specialized instruction folders (Skills) defining agent automation.
-- `Templates/`: Markdown templates used by skills to ensure consistent file structure.
+- `templates/`: Markdown templates used by skills to ensure consistent file structure.
 - `scripts/`: Shared Python scripts for indexing and dashboarding.
 - `.env`: Path to the active CRM data vault.
 

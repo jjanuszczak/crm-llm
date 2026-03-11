@@ -1,7 +1,7 @@
 # Skill: Create Deal
 
 ## Description
-Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. This skill automates the synthesis of information from Google Drive, Gmail, the company's website, and targeted web research to create a comprehensive investment profile using the `Templates/deal-template.md`. It also identifies and creates contact profiles for founders and links the deal to active opportunities if a target client is identified.
+Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. This skill automates the synthesis of information from Google Drive, Gmail, the company's website, and targeted web research to create a comprehensive investment profile using the `templates/deal-template.md`. It also identifies and creates contact profiles for founders and links the deal to active opportunities if a target client is identified.
 
 ## Usage
 `create-deal "Startup Name" --url "https://startup.com" --target-client "[[Account Name]]"`
@@ -22,7 +22,7 @@ Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. This skill aut
     *   Identify founders from the research.
     *   For each founder, run the `create-contact` skill to establish their profile in `CRM_DATA_PATH/Contacts/`.
 
-4.  **Deal-Flow Entry (Using `Templates/deal-template.md`):**
+4.  **Deal-Flow Entry (Using `templates/deal-template.md`):**
     *   **Frontmatter:** Populate `startup-name`, `sector`, `stage`, and `location`. Set `google-drive-url` to the URL of the folder found in Step 1. Set `date-sourced` and `date-modified` to the current date.
     *   **Body:** Synthesize the "Executive Summary," "Problem & Solution," and "Investment Highlights" based on the research.
     *   **Due Diligence:** Mark "Pitch Deck Reviewed" and "Tech/Product Demo" as checked if the corresponding sources were analyzed.

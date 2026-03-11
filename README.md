@@ -74,6 +74,6 @@ Every time the agent creates or modifies a file in your data vault, it follows a
 
 ## 📂 Directory Structure (Logic)
 *   `.gemini/skills/`: Specialized instruction sets for the agent.
-*   `Templates/`: Markdown templates for Accounts, Contacts, Tasks, etc.
+*   `templates/`: Markdown templates for Accounts, Contacts, Tasks, etc.
 *   `scripts/`: Shared utility scripts (e.g., note indexing).
 *   `.env`: Local environment configuration.

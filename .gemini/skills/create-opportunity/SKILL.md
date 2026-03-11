@@ -1,7 +1,7 @@
 # Skill: Create Opportunity
 
 ## Description
-Creates a new opportunity file in the `CRM_DATA_PATH/Opportunities/` directory. This skill follows the `Templates/opportunity-template.md` structure and ensures consistent naming and metadata tracking for sales deals.
+Creates a new opportunity file in the `CRM_DATA_PATH/Opportunities/` directory. This skill follows the `templates/opportunity-template.md` structure and ensures consistent naming and metadata tracking for sales deals.
 
 ## Usage
 `create-opportunity --account "Account Name" --product "Product Name" --year "YYYY"`
@@ -18,7 +18,7 @@ Creates a new opportunity file in the `CRM_DATA_PATH/Opportunities/` directory. 
     *   Verify the file does not already exist in the `CRM_DATA_PATH/Opportunities/` directory.
 
 3.  **Template Population:**
-    *   Load `Templates/opportunity-template.md`.
+    *   Load `templates/opportunity-template.md`.
     *   Replace placeholders (`{{Account}}`, `{{Product/Service}}`, `{{YYYY}}`, etc.) with provided arguments.
     *   Ensure the `account` property in the YAML frontmatter is correctly wikilinked: `account: "[[Account Name]]"`.
     *   Set `date-created` and `date-modified` to the current date (YYYY-MM-DD).

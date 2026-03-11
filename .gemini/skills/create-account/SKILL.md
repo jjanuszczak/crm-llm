@@ -1,7 +1,7 @@
 # Skill: Create Account
 
 ## Description
-Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a specified company. This skill automates the file creation, populates the YAML frontmatter with provided details, and performs web research to generate a comprehensive "Strategic Due Diligence Report" based on the `Templates/account-template.md`.
+Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a specified company. This skill automates the file creation, populates the YAML frontmatter with provided details, and performs web research to generate a comprehensive "Strategic Due Diligence Report" based on the `templates/account-template.md`.
 
 ## Usage
 `create-account "Company Name" --url "https://example.com" --priority "medium"`
@@ -22,7 +22,7 @@ Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a spec
     *   **Search 3:** Google search for `"[Company Name]" leadership founders funding investors` to find structural information.
     *   **Search 4:** Google search for `"[Company Name]" competitors Gartner Peer Insights G2 reviews` to find market positioning.
 
-4.  **Content Generation (Using `Templates/account-template.md`):**
+4.  **Content Generation (Using `templates/account-template.md`):**
     *   **Frontmatter:**
         *   `company-name`: The official name of the company.
         *   `headquarters`: City, Country.
@@ -34,7 +34,7 @@ Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a spec
         *   `date-created`: Current date (YYYY-MM-DD).
         *   `date-modified`: Current date (YYYY-MM-DD).
     *   **Body Sections:**
-        *   Populate all sections defined in `Templates/account-template.md` (Executive Summary, Financial Architecture, etc.) with synthesized information from the research.
+        *   Populate all sections defined in `templates/account-template.md` (Executive Summary, Financial Architecture, etc.) with synthesized information from the research.
         *   Create financial tables if data is available (retaining local currency but providing USD conversions).
         *   Create competitive comparison tables.
 

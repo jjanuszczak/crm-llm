@@ -1,7 +1,7 @@
 # Skill: Create Activity
 
 ## Description
-Creates a new activity file in the `CRM_DATA_PATH/Activities/` directory. This skill automates the tracking of interactions (calls, emails, meetings, etc.) and ensures they are correctly linked to contacts and opportunities using the `Templates/activity-template.md`.
+Creates a new activity file in the `CRM_DATA_PATH/Activities/` directory. This skill automates the tracking of interactions (calls, emails, meetings, etc.) and ensures they are correctly linked to contacts and opportunities using the `templates/activity-template.md`.
 
 ## Usage
 `create-activity --type "call|email|meeting|analysis|note" --contact "Contact Name" --opportunity "Opportunity Name" --date "YYYY-MM-DD" --email-link "URL" --meeting-notes "URL"`
@@ -18,7 +18,7 @@ Creates a new activity file in the `CRM_DATA_PATH/Activities/` directory. This s
     *   Verify the file does not already exist in the `CRM_DATA_PATH/Activities/` directory.
 
 3.  **Template Population:**
-    *   Load `Templates/activity-template.md`.
+    *   Load `templates/activity-template.md`.
     *   Replace placeholders (`{{activity-date}}`, `{{type}}`, etc.) with provided arguments.
     *   **Email Link:** If `--email-link` is provided, populate the `email-link` field in the frontmatter.
     *   **Meeting Notes:** If `--meeting-notes` is provided, populate the `meeting-notes` field in the frontmatter.

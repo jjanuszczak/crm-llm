@@ -1,7 +1,7 @@
 # Skill: Create Contact
 
 ## Description
-Creates a new contact file in the `CRM_DATA_PATH/Contacts/` directory for a specified individual. This skill automates the file creation, populates the YAML frontmatter with provided details, and performs web research to generate a comprehensive professional profile, including "little known" facts and engagement hooks, using the `Templates/contact-template.md` structure.
+Creates a new contact file in the `CRM_DATA_PATH/Contacts/` directory for a specified individual. This skill automates the file creation, populates the YAML frontmatter with provided details, and performs web research to generate a comprehensive professional profile, including "little known" facts and engagement hooks, using the `templates/contact-template.md` structure.
 
 ## Usage
 `create-contact "Full Name" --company "Company Name" --linkedin "LinkedIn URL" --email "email@address.com"`
@@ -21,7 +21,7 @@ Creates a new contact file in the `CRM_DATA_PATH/Contacts/` directory for a spec
     *   **Search 2:** Google search for `"[Name]" "[Company]" awards recognition "little known" facts` to find unique engagement angles.
     *   **Search 3:** Google search for `"[Name]" site:twitter.com OR site:instagram.com` (optional) to find personal interests.
 
-4.  **Content Generation (Using `Templates/contact-template.md`):**
+4.  **Content Generation (Using `templates/contact-template.md`):**
     *   **Frontmatter:**
         *   `full--name`: The contact's full name.
         *   `nickname`: The contact's first name or preferred nickname.

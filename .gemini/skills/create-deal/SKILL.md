@@ -20,7 +20,7 @@ Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. This skill aut
 
 3.  **Entity Creation (Founders):**
     *   Identify founders from the research.
-    *   For each founder, run the `create_contact` skill to establish their profile in `CRM_DATA_PATH/Contacts/`.
+    *   For each founder, run the `create-contact` skill to establish their profile in `CRM_DATA_PATH/Contacts/`.
 
 4.  **Deal-Flow Entry (Using `Templates/deal-template.md`):**
     *   **Frontmatter:** Populate `startup-name`, `sector`, `stage`, and `location`. Set `google-drive-url` to the URL of the folder found in Step 1. Set `date-sourced` and `date-modified` to the current date.
@@ -29,7 +29,7 @@ Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. This skill aut
     *   **Brokerage Strategy:** Link the `target-client` if provided.
 
 5.  **Opportunity Linking (Optional):**
-    *   If a `target-client` is provided, run the `create_opportunity` skill to create a referral opportunity in `CRM_DATA_PATH/Opportunities/` (e.g., "[[Account Name]] - [[Startup Name]] Deal Flow - [YYYY]").
+    *   If a `target-client` is provided, run the `create-opportunity` skill to create a referral opportunity in `CRM_DATA_PATH/Opportunities/` (e.g., "[[Account Name]] - [[Startup Name]] Deal Flow - [YYYY]").
 
 6.  **File Creation & Dashboard:**
     *   Write the deal entry to `CRM_DATA_PATH/Deals/[Startup-Name].md`.

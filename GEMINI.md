@@ -114,15 +114,15 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
     ```
 
 ### Available Skills
-*   `create_account`: Automates due diligence and file creation.
-*   `create_contact`: Researches professional bios and engagement hooks.
-*   `create_opportunity`: Initiates deal tracking.
-*   `create_deal`: Captures startup inventory and traction.
-*   `create_activity`: Formats interaction logs and action items.
-*   `create_task`: Manages actionable follow-ups and deadlines.
-*   `update_dashboard`: Aggregates vault data into `DASHBOARD.md`.
-*   `sync_workspace`: Proactively scans Gmail and Calendar for opportunity-linked updates.
-*   `sync_google_tasks`: Bidirectional sync between local CRM and Google Tasks using GWS CLI.
+*   `create-account`: Automates due diligence and file creation.
+*   `create-contact`: Researches professional bios and engagement hooks.
+*   `create-opportunity`: Initiates deal tracking.
+*   `create-deal`: Captures startup inventory and traction.
+*   `create-activity`: Formats interaction logs and action items.
+*   `create-task`: Manages actionable follow-ups and deadlines.
+*   `update-dashboard`: Aggregates vault data into `DASHBOARD.md`.
+*   `sync-workspace`: Proactively scans Gmail and Calendar for opportunity-linked updates.
+*   `sync-google-tasks`: Bidirectional sync between local CRM and Google Tasks using GWS CLI.
 
 ## Operational Mandates & Hooks
 
@@ -132,15 +132,15 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
 ### 1. The Startup Hook
 Upon starting a new session or receiving the first command, the agent must:
 1.  Read `CRM_DATA_PATH` from `.env`.
-2.  Run the `update_dashboard` skill to ensure the `DASHBOARD.md` is current.
+2.  Run the `update-dashboard` skill to ensure the `DASHBOARD.md` is current.
 3.  **Propose Workspace Sync:** Identify contacts linked to active opportunities and ask the user: *"I see [X] contacts in active opportunities. Should I scan Gmail and Calendar for updates since [Last Sync Date]?"*
-4.  Proceed with `sync_workspace` only if the user confirms.
+4.  Proceed with `sync-workspace` only if the user confirms.
 
 ### 2. The State-Change Hook (Automatic Bookkeeping)
 Immediately after creating or modifying any entity file:
 1. Update its `date-modified` field.
 2. Commit the change: `cd $CRM_DATA_PATH && git add . && git commit -m "agent: [action performed]"`
-3. Run `update_dashboard`.
+3. Run `update-dashboard`.
 
 ## Usage Guidelines
 *   **Wikilinks:** Maintain deep interconnection. Link Contacts to Accounts and Tasks to Opportunities.

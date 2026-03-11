@@ -34,7 +34,7 @@ Proactively scans Gmail and Google Calendar for interactions with contacts linke
     *   **DO NOT** create or modify files without explicit user approval for each group of changes.
 
 6.  **Finalization & Linking:**
-    *   After approval, run the relevant `create_*` skills.
+    *   After approval, run the relevant `create-*` skills.
     *   **Linking:** When creating a task that is an action item from an activity, the task file should include a link back to the activity file. The activity file should also be updated to include a link to the newly created task in the corresponding action item.
     *   **Automatic Bookkeeping:**
         *   After all approved changes are applied, commit the updates to the nested data repository:

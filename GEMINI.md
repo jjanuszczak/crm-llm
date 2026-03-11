@@ -3,20 +3,32 @@
 ## Project Overview
 This project contains the **Logic and Automation** for a personal agentic CRM system. The **CRM Data** (Accounts, Contacts, etc.) is stored in a **nested git repository** located at the path specified in the `.env` file's `CRM_DATA_PATH` variable.
 
-## Configuration
+## Project Context & Business Logic
+This system is optimized for a **Venture Brokerage and Strategic Advisory** model. It tracks three primary pillars of business:
+
+1.  **Deals (Inventory):** Located in `Deals/`. These are the "inventory"—startups raising capital, seeking debt, or looking for strategic partnerships (e.g., Solviva, Example Fintech).
+2.  **Accounts (Entities):** Located in `Accounts/`. These are the "clients" or "partners"—investors (VCs, Banks) and corporates (e.g., Example Bank, Ageas, Integra Partners).
+3.  **Opportunities (Transactions):** Located in `Opportunities/`. These are the active engagements. They fall into two categories:
+    *   **Brokerage:** Matching a **Deal** to an **Account** (e.g., introducing Solviva to an investor).
+    *   **Direct Engagement:** Direct opportunities with an **Account** for advisory, consulting, board seats, or senior leadership roles (e.g., the Example CEO role or example course development).
+
+## Configuration & Environment
 - **Strategy:** Dynamic Nested Repo (The logic remains constant, while the target data repository can be swapped or renamed via `.env`).
 - **Environment:** A `.env` file in the root directory MUST define `CRM_DATA_PATH`.
-- **Constraint:** For security and tool compatibility, `CRM_DATA_PATH` **MUST** point to a subdirectory **within** the current project root (e.g., `./crm-data`).
-- **Target Data:** The directory specified in `CRM_DATA_PATH` follows the Obsidian Vault structure.
+- **Constraint:** `CRM_DATA_PATH` **MUST** point to a subdirectory **within** the current project root (e.g., `./crm-data`).
+- **Tool Requirements:**
+    *   **GWS CLI:** Must be installed and authenticated for `sync-google-tasks`.
+    *   **Python 3:** Required for dashboarding and synchronization scripts.
 
 ## File Operations Protocol (CRITICAL)
 1. **Dynamic Path Resolution:** Always read the current `CRM_DATA_PATH` from `.env`.
 2. **Native Tools:** Use `read_file`, `write_file`, and `replace` directly on files within the resolved `CRM_DATA_PATH` tree.
-3. **Automatic Bookkeeping:** After any write operation to `CRM_DATA_PATH`, you **MUST** commit the changes specifically within that subdirectory:
+3. **Template Mandate:** ALL new entity files MUST be based on the corresponding file in the `templates/` directory to ensure schema consistency.
+4. **Automatic Bookkeeping:** After any write operation to `CRM_DATA_PATH`, you **MUST** commit the changes specifically within that subdirectory:
    ```bash
    cd $CRM_DATA_PATH && git add . && git commit -m "agent: [action performed]"
    ```
-4. **Isolation:** The directory specified in `CRM_DATA_PATH` must be ignored by the main `crm-logic` repository's `.gitignore` to prevent data leakage.
+5. **Isolation:** The directory specified in `CRM_DATA_PATH` must be ignored by the main `crm-logic` repository's `.gitignore`.
 
 ## Directory Structure (Logic)
 - `.gemini/skills/`: Specialized instruction folders (Skills) defining agent automation.
@@ -63,7 +75,7 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
     ```yaml
     opportunity-name: "[Account] - [Deal/Service] - [YYYY]"
     account: "[[Link to Account]]"
-    deal: "[[Link to Deal-Flow]]" # If a brokerage match
+    deal: "[[Link to Deal-Flow]]" # Optional: Only if a brokerage match
     primary-contact: "[[Link to Contact]]"
     stage: discovery | proposal | negotiation | closed-won | closed-lost
     deal-value: Number (Expected Commission or Retainer Value)
@@ -99,6 +111,8 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
     contact: "[[Link]]"
     opportunity: "[[Link]]"
     type: "call" | "email" | "prep" | "follow-up"
+    email-link: "URL"
+    meeting-notes: "URL"
     ```
 
 ### 6. Activities
@@ -112,6 +126,8 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
     email-link: "URL"
     meeting-notes: "URL"
     ```
+
+## Automated Workflows (Skills)
 
 ### Available Skills
 *   `create-account`: Automates due diligence and file creation.
@@ -133,9 +149,10 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
 ### 1. The Startup Hook
 Upon starting a new session or receiving the first command, the agent must:
 1.  Read `CRM_DATA_PATH` from `.env`.
-2.  Run the `update-dashboard` skill to ensure the `DASHBOARD.md` is current.
-3.  **Propose Workspace Sync:** Identify contacts linked to active opportunities and ask the user: *"I see [X] contacts in active opportunities. Should I scan Gmail and Calendar for updates since [Last Sync Date]?"*
-4.  Proceed with `sync-workspace` only if the user confirms.
+2.  Verify `gws` CLI status if a task sync is requested.
+3.  Run the `update-dashboard` skill to ensure the `DASHBOARD.md` is current.
+4.  **Propose Workspace Sync:** Identify contacts linked to active opportunities and ask the user: *"I see [X] contacts in active opportunities. Should I scan Gmail and Calendar for updates since [Last Sync Date]?"*
+5.  Proceed with `sync-workspace` only if the user confirms.
 
 ### 2. The State-Change Hook (Automatic Bookkeeping)
 Immediately after creating or modifying any entity file:

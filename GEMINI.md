@@ -101,7 +101,17 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
     type: "call" | "email" | "prep" | "follow-up"
     ```
 
-## Automated Workflows (Skills)
+### 6. Activities
+*   **Location:** `CRM_DATA_PATH/Activities/`
+*   **YAML Frontmatter:**
+    ```yaml
+    activity-date: YYYY-MM-DD
+    type: "call" | "email" | "meeting" | "analysis" | "note"
+    contacts: ["[[Link]]"]
+    opportunity: "[[Link]]"
+    email-link: "URL"
+    meeting-notes: "URL"
+    ```
 
 ### Available Skills
 *   `create_account`: Automates due diligence and file creation.

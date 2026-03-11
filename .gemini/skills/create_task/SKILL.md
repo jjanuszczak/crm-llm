@@ -4,7 +4,7 @@
 Creates a new task file in the `CRM_DATA_PATH/Tasks/` directory. This skill ensures that follow-up actions, prep work, and administrative requirements are structured, dated, and linked to the relevant Account, Contact, or Opportunity.
 
 ## Usage
-`create-task --name "Task Name" --account "Account" --contact "Contact" --opportunity "Opportunity" --due "YYYY-MM-DD" --priority "high|medium|low"`
+`create-task --name "Task Name" --account "Account" --contact "Contact" --opportunity "Opportunity" --due "YYYY-MM-DD" --priority "high|medium|low" --email-link "URL" --meeting-notes "URL"`
 
 ## Implementation Steps
 
@@ -19,6 +19,8 @@ Creates a new task file in the `CRM_DATA_PATH/Tasks/` directory. This skill ensu
 3.  **Template Population:**
     *   Load `Templates/task-template.md`.
     *   Replace placeholders (`{{Task Name}}`, `{{Account}}`, `{{YYYY-MM-DD}}`, etc.) with provided arguments.
+    *   **Email Link:** If `--email-link` is provided, populate the `email-link` field in the frontmatter.
+    *   **Meeting Notes:** If `--meeting-notes` is provided, populate the `meeting-notes` field in the frontmatter.
     *   Set `date-created` and `date-modified` to the current date (YYYY-MM-DD).
     *   Ensure wikilinks are correctly formatted (e.g., `account: "[[Account Name]]"`).
 

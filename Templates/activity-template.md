@@ -4,6 +4,7 @@ type: {{call | email | meeting | analysis | note}}
 contacts: ["[[{{Contact Name}}]]"]
 opportunity: "[[{{Opportunity Name}}]]"
 email-link: {{email-link}}
+meeting-notes: {{meeting-notes}}
 ---
 
 # **Activity: {{type}} - {{activity-date}}**

@@ -9,6 +9,8 @@ account: "[[{{Account}}]]"
 contact: "[[{{Contact}}]]"
 opportunity: "[[{{Opportunity}}]]"
 type: follow-up
+email-link: {{email-link}}
+meeting-notes: {{meeting-notes}}
 ---
 
 # **Task: {{task-name}}**

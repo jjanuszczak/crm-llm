@@ -1,30 +1,27 @@
 # Skill: Create Contact
 
 ## Description
-Creates a new contact file in the `Contacts/` directory for a specified individual. This skill automates the file creation, populates the YAML frontmatter with provided details, and performs web research to generate a comprehensive professional profile, including "little known" facts and engagement hooks, using the `Templates/contact-template.md` structure.
+Creates a new contact file in the `CRM_DATA_PATH/Contacts/` directory for a specified individual. This skill automates the file creation, populates the YAML frontmatter with provided details, and performs web research to generate a comprehensive professional profile, including "little known" facts and engagement hooks, using the `Templates/contact-template.md` structure.
 
 ## Usage
 `create-contact "Full Name" --company "Company Name" --linkedin "LinkedIn URL" --email "email@address.com"`
 
-## Arguments
-*   `name` (Required): The full name of the contact (e.g., "Jane Doe").
-*   `company` (Optional): The name of the company the contact is associated with (e.g., "Acme Corp"). If provided, it will be wikilinked in the frontmatter.
-*   `linkedin` (Optional): The URL to the contact's LinkedIn profile.
-*   `email` (Optional): The contact's email address.
-*   `mobile` (Optional): The contact's mobile number.
-
 ## Implementation Steps
 
-1.  **File Naming:**
-    *   Convert the `name` to `Firstname-Lastname.md` format (e.g., `John-Garfin.md`).
-    *   Check if `Contacts/[Firstname-Lastname].md` already exists. If it does, stop and notify the user.
+1.  **Dynamic Path Resolution:**
+    *   Read `CRM_DATA_PATH` from `.env`.
+    *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
-2.  **Web Research (If `linkedin` is provided or `company` is known):**
+2.  **File Naming:**
+    *   Convert the `name` to `Firstname-Lastname.md` format (e.g., `John-Garfin.md`).
+    *   Check if `CRM_DATA_PATH/Contacts/[Firstname-Lastname].md` already exists. If it does, stop and notify the user.
+
+3.  **Web Research (If `linkedin` is provided or `company` is known):**
     *   **Search 1:** Google search for `"[Name]" "[Company]" LinkedIn` to find the profile if not provided.
     *   **Search 2:** Google search for `"[Name]" "[Company]" awards recognition "little known" facts` to find unique engagement angles.
     *   **Search 3:** Google search for `"[Name]" site:twitter.com OR site:instagram.com` (optional) to find personal interests.
 
-3.  **Content Generation (Using `Templates/contact-template.md`):**
+4.  **Content Generation (Using `Templates/contact-template.md`):**
     *   **Frontmatter:**
         *   `full--name`: The contact's full name.
         *   `nickname`: The contact's first name or preferred nickname.
@@ -48,8 +45,15 @@ Creates a new contact file in the `Contacts/` directory for a specified individu
         *   **Section 4: Actions**
             *   Create a "Search Email" link: `[Search Email](https://mail.google.com/mail/u/0/#search/[email_address])`.
 
-4.  **File Creation:**
-    *   Write the generated content to `Contacts/[Firstname-Lastname].md`.
+5.  **File Creation:**
+    *   Write the generated content to `CRM_DATA_PATH/Contacts/[Firstname-Lastname].md`.
 
-5.  **Output:**
+6.  **Automatic Bookkeeping:**
+    *   Commit the new file to the nested data repository:
+        ```bash
+        cd $CRM_DATA_PATH && git add Contacts/[Firstname-Lastname].md && git commit -m "agent: created contact [Firstname-Lastname]"
+        ```
+    *   Run `update-dashboard` to reflect the new contact.
+
+7.  **Output:**
     *   Confirm the file creation to the user and display the path.

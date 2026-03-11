@@ -1,0 +1,76 @@
+# CRM Repo Strategy
+
+This project uses a classic "Nested Repo" strategy. It is often cleaner than Symlinks or Submodules because it removes the "abstraction layer"—the data is physically exactly where the agent expects it to be.
+
+### 1. The Setup Logic
+
+In this scenario, you have a folder structure like this:
+
+* `crm-logic/` (Main Repo - Public)
+* `.git/` (Logic history)
+* `skills/`
+* **`crm-data/`** (Nested Repo - Private)
+* `.git/` (Data history)
+* `contacts/`
+
+### 2. How to Configure the `.gitignore`
+
+To make this work without Git getting confused (and without accidentally pushing your private data to your public repo), you must add the folder name to the **Public Repo's** `.gitignore`.
+
+**In `crm-logic/.gitignore`:**
+
+```text
+# Ignore the entire nested data directory
+crm-data/
+
+```
+
+**Why this is "The Best of Both Worlds":**
+
+* **No Sandbox Issues:** Since `crm-data/` is a real subdirectory, Gemini's `read_file`, `list_files`, and `replace` tools will work **natively**. You no longer need the Base64 shell hack for writing.
+* **Complete Isolation:** Even though the folder is "inside" the logic repo, Git treats them as two separate universes. Running `git push` in the logic folder will never touch the data folder.
+* **Simple Paths:** Your agent can just use relative paths like `./crm-data/contacts/` instead of jumping around with environment variables.
+
+---
+
+### 3. Updated GEMINI.md Technical Mandate
+
+Since the sandbox is no longer an issue, your instructions to the agent become much simpler and more robust.
+
+#### **File Operations Protocol**
+
+1. **Direct Access:** All CRM data is located in `./crm-data/`.
+2. **Native Tools:** Use `read_file`, `write_file`, and `replace` directly on files within the `./crm-data/` tree.
+3. **Automatic Bookkeeping:** After any write operation to `./crm-data/`, you **must** commit the changes specifically within that subdirectory:
+```bash
+cd crm-data && git add . && git commit -m "agent: [action performed]"
+
+```
+---
+
+### 4. One Critical Warning: The "Dirty" Parent Repo
+
+If you ever accidentally run `git add .` in the **Logic (Public) Repo** *before* you've added `crm-data/` to the `.gitignore`, Git might try to track the folder as a "Submodule" (a shallow pointer).
+
+**If this happens, run:**
+
+```bash
+git rm -r --cached crm-data
+
+```
+
+This "un-stages" the folder from the public repo without deleting your actual data.
+
+---
+
+### 5. Final Strategy Comparison
+
+| Feature | Symlinks | Submodules | **Nested Repos (Your Suggestion)** |
+| --- | --- | --- | --- |
+| **Ease of Use** | Moderate | Hard | **Easiest** |
+| **Tool Compatibility** | Variable | High | **Perfect** |
+| **Risk of Data Leak** | Low | Low | **Moderate** (Requires strict `.gitignore`) |
+| **Agent Performance** | Good | Great | **Great** |
+
+**Verdict:** Your suggestion is the most "Agent-Friendly." It minimizes the complexity of the agent's "worldview" while keeping your privacy boundaries intact.
+

@@ -1,24 +1,34 @@
 # Gemini Context: Personal CRM & Venture Brokerage (Logic)
 
 ## Project Overview
-This project contains the **Logic and Automation** for a personal sgentic CRM system. The **CRM Data** (Accounts, Contacts, etc.) is stored in a separate directory specified in the `.env` file.
+This project contains the **Logic and Automation** for a personal agentic CRM system. The **CRM Data** (Accounts, Contacts, etc.) is stored in a **nested git repository** located at the path specified in the `.env` file's `CRM_DATA_PATH` variable.
 
 ## Configuration
-- **Environment:** A `.env` file in the root directory defines `CRM_DATA_PATH`.
-- **Target Data:** The `crm-data` project follows the Obsidian Vault structure.
-- **Tool Usage:** All file operations (read, write, list, search) for CRM entities (Accounts, Contacts, etc.) MUST be performed relative to the path specified in `CRM_DATA_PATH`. If a tool accepts a path, resolve it as `CRM_DATA_PATH + "/Relative/Path"`.
+- **Strategy:** Dynamic Nested Repo (The logic remains constant, while the target data repository can be swapped or renamed via `.env`).
+- **Environment:** A `.env` file in the root directory MUST define `CRM_DATA_PATH`.
+- **Constraint:** For security and tool compatibility, `CRM_DATA_PATH` **MUST** point to a subdirectory **within** the current project root (e.g., `./crm-data`).
+- **Target Data:** The directory specified in `CRM_DATA_PATH` follows the Obsidian Vault structure.
+
+## File Operations Protocol (CRITICAL)
+1. **Dynamic Path Resolution:** Always read the current `CRM_DATA_PATH` from `.env`.
+2. **Native Tools:** Use `read_file`, `write_file`, and `replace` directly on files within the resolved `CRM_DATA_PATH` tree.
+3. **Automatic Bookkeeping:** After any write operation to `CRM_DATA_PATH`, you **MUST** commit the changes specifically within that subdirectory:
+   ```bash
+   cd $CRM_DATA_PATH && git add . && git commit -m "agent: [action performed]"
+   ```
+4. **Isolation:** The directory specified in `CRM_DATA_PATH` must be ignored by the main `crm-logic` repository's `.gitignore` to prevent data leakage.
 
 ## Directory Structure (Logic)
 - `.gemini/skills/`: Specialized instruction folders (Skills) defining agent automation.
 - `Templates/`: Markdown templates used by skills to ensure consistent file structure.
 - `scripts/`: Shared Python scripts for indexing and dashboarding.
-- `.env`: Path to the active `crm-data` vault.
+- `.env`: Path to the active CRM data vault.
 
 ## Entity Schemas & Models (Data Context)
 (These schemas apply to files found within `CRM_DATA_PATH`)
 
 ### 1. Accounts
-... (rest of the schemas)
+*   **Location:** `CRM_DATA_PATH/Accounts/`
 *   **YAML Frontmatter:**
     ```yaml
     company-name: "String"
@@ -34,9 +44,10 @@ This project contains the **Logic and Automation** for a personal sgentic CRM sy
     ```
 
 ### 2. Contacts
+*   **Location:** `CRM_DATA_PATH/Contacts/`
 *   **YAML Frontmatter:**
     ```yaml
-    full--name: "String"
+    full-name: "String"
     nickname: "String"
     account: "[[Link to Account]]"
     linkedin: "URL"
@@ -47,6 +58,7 @@ This project contains the **Logic and Automation** for a personal sgentic CRM sy
     ```
 
 ### 3. Opportunities
+*   **Location:** `CRM_DATA_PATH/Opportunities/`
 *   **YAML Frontmatter:**
     ```yaml
     opportunity-name: "[Account] - [Deal/Service] - [YYYY]"
@@ -61,6 +73,7 @@ This project contains the **Logic and Automation** for a personal sgentic CRM sy
     ```
 
 ### 4. Deal-Flow (Startups)
+*   **Location:** `CRM_DATA_PATH/Deals/`
 *   **YAML Frontmatter:**
     ```yaml
     startup-name: "String"
@@ -75,6 +88,7 @@ This project contains the **Logic and Automation** for a personal sgentic CRM sy
     ```
 
 ### 5. Tasks
+*   **Location:** `CRM_DATA_PATH/Tasks/`
 *   **YAML Frontmatter:**
     ```yaml
     task-name: "String"
@@ -89,17 +103,11 @@ This project contains the **Logic and Automation** for a personal sgentic CRM sy
 
 ## Automated Workflows (Skills)
 
-### Skill Structure
-New skills must be created in `.gemini/skills/[skill_name]/` with:
-*   `SKILL.md`: Core instructions.
-*   `scripts/`: Automation scripts.
-*   `reference/`: Supporting documents.
-
 ### Available Skills
 *   `create_account`: Automates due diligence and file creation.
 *   `create_contact`: Researches professional bios and engagement hooks.
 *   `create_opportunity`: Initiates deal tracking.
-*   `create_deal_flow`: Captures startup inventory and traction.
+*   `create_deal`: Captures startup inventory and traction.
 *   `create_activity`: Formats interaction logs and action items.
 *   `create_task`: Manages actionable follow-ups and deadlines.
 *   `update_dashboard`: Aggregates vault data into `DASHBOARD.md`.
@@ -112,12 +120,16 @@ New skills must be created in `.gemini/skills/[skill_name]/` with:
 
 ### 1. The Startup Hook
 Upon starting a new session or receiving the first command, the agent must:
-1.  Run the `update_dashboard` skill to ensure the `DASHBOARD.md` is current.
-2.  **Propose Workspace Sync:** Identify contacts linked to active opportunities and ask the user: *"I see [X] contacts in active opportunities. Should I scan Gmail and Calendar for updates since [Last Sync Date]?"*
-3.  Proceed with `sync_workspace` only if the user confirms.
+1.  Read `CRM_DATA_PATH` from `.env`.
+2.  Run the `update_dashboard` skill to ensure the `DASHBOARD.md` is current.
+3.  **Propose Workspace Sync:** Identify contacts linked to active opportunities and ask the user: *"I see [X] contacts in active opportunities. Should I scan Gmail and Calendar for updates since [Last Sync Date]?"*
+4.  Proceed with `sync_workspace` only if the user confirms.
 
-### 2. The State-Change Hook
-Immediately after creating or modifying any entity file, the agent must update its `date-modified` field and run `update_dashboard`.
+### 2. The State-Change Hook (Automatic Bookkeeping)
+Immediately after creating or modifying any entity file:
+1. Update its `date-modified` field.
+2. Commit the change: `cd $CRM_DATA_PATH && git add . && git commit -m "agent: [action performed]"`
+3. Run `update_dashboard`.
 
 ## Usage Guidelines
 *   **Wikilinks:** Maintain deep interconnection. Link Contacts to Accounts and Tasks to Opportunities.

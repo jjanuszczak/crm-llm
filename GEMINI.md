@@ -123,6 +123,7 @@ This project contains the **Logic and Automation** for a personal agentic CRM sy
 *   `update-dashboard`: Aggregates vault data into `DASHBOARD.md`.
 *   `sync-workspace`: Proactively scans Gmail and Calendar for opportunity-linked updates.
 *   `sync-google-tasks`: Bidirectional sync between local CRM and Google Tasks using GWS CLI.
+*   `init-crm-data`: Initializes a new nested data repository with standard folders and git config.
 
 ## Operational Mandates & Hooks
 

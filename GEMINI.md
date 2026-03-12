@@ -4,13 +4,14 @@
 This project contains the **Logic and Automation** for a personal agentic CRM system. The **CRM Data** (Accounts, Contacts, etc.) is stored in a **nested git repository** located at the path specified in the `.env` file's `CRM_DATA_PATH` variable.
 
 ## Project Context & Business Logic
-This system is optimized for a **Venture Brokerage and Strategic Advisory** model. It tracks three primary pillars of business:
+This system is optimized for a **Venture Brokerage and Strategic Advisory** model. It tracks three primary pillars:
 
-1.  **Deals (Inventory):** Located in `Deals/`. These are the "inventory"—startups raising capital, seeking debt, or looking for strategic partnerships (e.g., Solviva, Example Fintech).
-2.  **Accounts (Entities):** Located in `Accounts/`. These are the "clients" or "partners"—investors (VCs, Banks) and corporates (e.g., Example Bank, Ageas, Integra Partners).
-3.  **Opportunities (Transactions):** Located in `Opportunities/`. These are the active engagements. They fall into two categories:
-    *   **Brokerage:** Matching a **Deal** to an **Account** (e.g., introducing Solviva to an investor).
-    *   **Direct Engagement:** Direct opportunities with an **Account** for advisory, consulting, board seats, or senior leadership roles (e.g., the Example CEO role or example course development).
+1.  **Deals (Inventory):** Located in `Deals/`. These are startups or projects seeking capital (equity/debt).
+2.  **Accounts (Entities):** Located in `Accounts/`. These are **Clients**—entities that pay for services (Advisory, Consulting, Retainers) or represent potential full-time roles.
+3.  **Opportunities (Engagements):** Located in `Opportunities/`. These are the active "tickets" for revenue:
+    *   **Brokerage:** Matching a **Deal** to an **Account** (Investor).
+    *   **Direct Engagement:** An **Account** hiring you for a specific mandate (Advisory, Board Seat, CEO Role).
+    *   **Dual-Role:** A startup that is both a **Deal** (raising money) and an **Account** (paying you for advisory/fundraising support).
 
 ## Configuration & Environment
 - **Strategy:** Dynamic Nested Repo (The logic remains constant, while the target data repository can be swapped or renamed via `.env`).

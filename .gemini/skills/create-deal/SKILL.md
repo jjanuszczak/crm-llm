@@ -1,24 +1,30 @@
 # Skill: Create Deal
 
 ## Description
-Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. This skill automates the synthesis of information from Google Drive, Gmail, the company's website, and targeted web research to create a comprehensive investment profile using the `templates/deal-template.md`. It also identifies and creates contact profiles for founders and links the deal to active opportunities if a target client is identified.
+Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. A **Deal** is your inventory—a company seeking capital. If the company is also paying you for advisory services, it should also be created as an **Account** using `create-account`.
 
 ## Usage
-`create-deal "Startup Name" --url "https://startup.com" --target-client "[[Account Name]]"`
-
+`create-deal "Startup Name" --url "https://startup.com" [--is-client]`
 ## Implementation Steps
 
 1.  **Dynamic Path Resolution:**
     *   Read `CRM_DATA_PATH` from `.env`.
     *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
-2.  **Multi-Source Research:**
+2.  **Multi-Source Research (including LinkedIn):**
     *   **Google Drive:** Search for a folder named `[Startup Name]`. Read the "Pitch Deck" or "Backgrounder" documents found within.
     *   **Gmail:** Search for emails from the `[startup.com]` domain to extract recent updates, traction metrics, and founder names.
     *   **Website:** Fetch the provided `url`. Analyze the landing page for the core value proposition and product tiers.
+    *   **LinkedIn Mapping (Warm Path Discovery):**
+        *   Navigate to the company's LinkedIn page (About or People tab).
+        *   **Extraction:** Capture names, titles, and profile URLs of key leadership.
+        *   **Graph Matching:** Cross-reference extracted names against `CRM_DATA_PATH/Contacts/`.
+        *   **Warm Path Identification:** If a match is found (e.g., "Account [X]'s MD is an investor in Deal [Y]"), stage this in `CRM_DATA_PATH/staging/warm_paths.json`.
     *   **Web Research:** Google search for `"[Startup Name]" funding news founders 2025 2026` to find recent developments, awards, or leadership changes not in Drive or Gmail.
 
 3.  **Entity Creation (Founders):**
+...
+
     *   Identify founders from the research.
     *   For each founder, run the `create-contact` skill to establish their profile in `CRM_DATA_PATH/Contacts/`.
 

@@ -269,5 +269,38 @@ def main():
     
     print(f"DASHBOARD.md updated successfully at {DASHBOARD_PATH}")
 
+    # 5. Run Matchmaker & Intelligence Engine
+    try:
+        import subprocess
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        match_script = os.path.abspath(os.path.join(script_dir, "../../../../scripts/matchmaker.py"))
+        intel_script = os.path.abspath(os.path.join(script_dir, "../../../../scripts/intelligence-engine.py"))
+        
+        if os.path.exists(match_script):
+            print("Running Brokerage Matchmaker...")
+            subprocess.run(["python3", match_script], check=True)
+            
+        if os.path.exists(intel_script):
+            print("Running Intelligence Engine integration...")
+            subprocess.run(["python3", intel_script], check=True)
+        else:
+            print(f"Warning: Intelligence Engine script not found at {intel_script}")
+    except Exception as e:
+        print(f"Error running Intelligence Engine: {e}")
+
+    # 6. Commit changes to CRM Data if it's a git repo
+    try:
+        print("Committing changes to CRM data...")
+        subprocess.run(["git", "add", "."], cwd=PROJECT_ROOT, check=True)
+        # Check if there are changes to commit
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=PROJECT_ROOT, capture_output=True, text=True)
+        if status.stdout.strip():
+            subprocess.run(["git", "commit", "-m", "agent: update dashboard and intelligence metrics"], cwd=PROJECT_ROOT, check=True)
+            print("Changes committed to CRM data.")
+        else:
+            print("No changes to commit in CRM data.")
+    except Exception as e:
+        print(f"Error committing changes to CRM data: {e}")
+
 if __name__ == "__main__":
     main()

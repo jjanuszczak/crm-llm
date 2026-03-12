@@ -1,14 +1,19 @@
 ---
-full--name: {{Full Name}}
-nickname: {{Nickname}}
-account: [[{{Account Link}}]]
-linkedin: {{LinkedIn URL}}
-email: {{Email Address}}
-mobile: {{Mobile Number}}
-source: {{network | conference | cold-outreach}}
-status: {{qualified | lead | contacted}}
-date-created: {{YYYY-MM-DD}}
-date-modified: {{YYYY-MM-DD}}
+full-name: "{{Full Name}}"
+nickname: "{{Nickname}}"
+account: "[[{{Account Link}}]]"
+linkedin: "{{LinkedIn URL}}"
+email: "{{Email Address}}"
+mobile: "{{Mobile Number}}"
+source: "{{network | conference | cold-outreach}}"
+status: "{{qualified | lead | contacted}}"
+warmth-score: 0
+warmth-status: "neutral"
+velocity-score: 0
+last-contacted: "YYYY-MM-DD"
+days-since-contact: 0
+date-created: "{{YYYY-MM-DD}}"
+date-modified: "{{YYYY-MM-DD}}"
 ---
 
 # **Profile: {{Full Name}}**

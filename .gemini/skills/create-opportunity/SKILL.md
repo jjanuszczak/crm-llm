@@ -5,14 +5,21 @@ Creates a new opportunity file in the `CRM_DATA_PATH/Opportunities/` directory. 
 
 ## Usage
 `create-opportunity --account "Account Name" --product "Product Name" --year "YYYY"`
-
 ## Implementation Steps
 
 1.  **Dynamic Path Resolution:**
     *   Read `CRM_DATA_PATH` from `.env`.
     *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
-2.  **File Naming:**
+2.  **LinkedIn Stakeholder Mapping (Warm Path Discovery):**
+    *   **Trigger:** If an account is provided, search LinkedIn for the company page.
+    *   **Extraction:** Identify key decision-makers (CXOs, Heads of Digital/Partnerships).
+    *   **Graph Matching:** Cross-reference extracted names against `CRM_DATA_PATH/Contacts/`.
+    *   **Warm Path Identification:** If a match is found (e.g., "I already have a relationship with the CIO of Account [X]"), stage this in `CRM_DATA_PATH/staging/warm_paths.json`.
+
+3.  **File Naming:**
+...
+
     *   Construct the name as `[Account] - [Product/Service] - [YYYY]`.
     *   Example: `Example Bank - Strategic Advisory - 2026.md`.
     *   Verify the file does not already exist in the `CRM_DATA_PATH/Opportunities/` directory.

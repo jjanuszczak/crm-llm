@@ -10,6 +10,12 @@ investment-mandate: []
 check-size: "String"
 funding-stage: "String"
 target-raise: 0
+warmth-score: 0
+warmth-status: "neutral"
+velocity-score: 0
+account-warmth-index: 0
+last-contacted: YYYY-MM-DD
+days-since-contact: 0
 date-created: YYYY-MM-DD
 date-modified: YYYY-MM-DD
 ---

@@ -1,0 +1,37 @@
+{
+  "generic": [
+    "gmail.com",
+    "outlook.com",
+    "hotmail.com",
+    "yahoo.com",
+    "icloud.com",
+    "me.com",
+    "live.com",
+    "msn.com",
+    "aol.com"
+  ],
+  "service": [
+    "zoom.us",
+    "doordash.com",
+    "uber.com",
+    "slack.com",
+    "calendly.com",
+    "notifications.google.com",
+    "amazon.com",
+    "github.com",
+    "atlassian.net",
+    "jira.com",
+    "confluence.com",
+    "trello.com"
+  ],
+  "noise": [
+    "no-reply",
+    "noreply",
+    "support",
+    "info",
+    "marketing",
+    "newsletter",
+    "billing",
+    "accounts"
+  ]
+}

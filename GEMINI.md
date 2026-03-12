@@ -127,6 +127,10 @@ This system is optimized for a **Venture Brokerage and Strategic Advisory** mode
     meeting-notes: "URL"
     ```
 
+### 7. Reports
+*   **Location:** `CRM_DATA_PATH/Reports/`
+*   **Schema:** Defined in `templates/report-template.md`. Stores daily progress reports.
+
 ## Automated Workflows (Skills)
 
 ### Available Skills
@@ -140,6 +144,7 @@ This system is optimized for a **Venture Brokerage and Strategic Advisory** mode
 *   `sync-workspace`: Proactively scans Gmail and Calendar for opportunity-linked updates.
 *   `sync-google-tasks`: Bidirectional sync between local CRM and Google Tasks using GWS CLI.
 *   `init-crm-data`: Initializes a new nested data repository with standard folders and git config.
+*   `create-daily-report`: Synthesizes session actions into a structured report saved in `Reports/`.
 
 ## Operational Mandates & Hooks
 
@@ -159,6 +164,9 @@ Immediately after creating or modifying any entity file:
 1. Update its `date-modified` field.
 2. Commit the change: `cd $CRM_DATA_PATH && git add . && git commit -m "agent: [action performed]"`
 3. Run `update-dashboard`.
+
+### 3. Communication Mandate (CRITICAL)
+- **Default Email:** ALWAYS use `operator@example.com` as the sender account for all Gmail operations unless otherwise specified.
 
 ## Usage Guidelines
 *   **Wikilinks:** Maintain deep interconnection. Link Contacts to Accounts and Tasks to Opportunities.

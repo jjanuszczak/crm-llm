@@ -1,10 +1,15 @@
 # Skill: Sync Google Tasks
 
 ## Description
-Performs a bidirectional synchronization between the local CRM tasks (`CRM_DATA_PATH/Tasks/`) and Google Tasks using the `gws` CLI. This skill ensures that all outstanding local tasks are pushed to Google Tasks (if they don't already exist) and can optionally update local task statuses based on remote completion.
+Performs a bidirectional synchronization between the local CRM tasks (`CRM_DATA_PATH/Tasks/`) and Google Tasks using the `gws` CLI. 
+
+This skill ensures:
+1.  **Push New:** Local `todo` tasks are created in Google Tasks.
+2.  **Pull Completion:** If a task is marked completed in Google, it is marked completed locally.
+3.  **Push Completion:** If a task is marked completed locally, it is marked completed in Google.
 
 ## Usage
-`sync-google-tasks [--direction push|pull|both]`
+`sync-google-tasks`
 
 ## Implementation Steps
 
@@ -14,28 +19,23 @@ Performs a bidirectional synchronization between the local CRM tasks (`CRM_DATA_
 
 2.  **Local Task Extraction:**
     *   Scan `CRM_DATA_PATH/Tasks/` for all `.md` files.
-    *   Parse YAML frontmatter to identify tasks with `status: todo` or `status: in-progress`.
-    *   Capture `task-name`, `due-date`, and `status`.
+    *   Parse YAML frontmatter for `task-name`, `due-date`, and `status`.
 
 3.  **Remote Task Extraction:**
-    *   Use `gws tasks tasklists list` to find the primary task list ID (usually "My Tasks").
-    *   Use `gws tasks tasks list` to retrieve all uncompleted tasks from the identified list.
+    *   Retrieve the primary task list (e.g., "My Tasks").
+    *   Retrieve all tasks from Google (including hidden/completed ones) using `showCompleted: true` and `showHidden: true`.
 
 4.  **Deduplication & Mapping:**
-    *   Compare local `task-name` with remote `title`.
-    *   **Push:** Identify local tasks that do not exist remotely.
-    *   **Update:** (Optional) Identify remote tasks that are marked as completed to update local files.
+    *   Map remote tasks by title to a list of `{id, status}` objects to handle duplicates.
 
-5.  **Execution:**
-    *   For each new local task, use `gws tasks tasks insert` with the correctly formatted `due` date (RFC 3339).
-    *   Log the results of the synchronization.
+5.  **Execution Logic:**
+    *   **New Local -> Google:** If local status is active but no remote version exists, `insert` into Google.
+    *   **Remote Done -> Local:** If local status is active but at least one remote version is `completed`, update local to `completed`.
+    *   **Local Done -> Remote:** If local status is `completed` but one or more remote versions are still `needsAction`, `patch` those remote tasks to `completed`.
 
 6.  **Automatic Bookkeeping:**
-    *   If any local files were modified (e.g., status updated from remote), commit the changes to the nested data repository:
-        ```bash
-        cd $CRM_DATA_PATH && git add . && git commit -m "agent: synced tasks with Google Tasks"
-        ```
+    *   Commit local changes to the nested data repository.
     *   Run `update-dashboard`.
 
 7.  **Output:**
-    *   Summarize the number of tasks pushed, pulled, or updated.
+    *   Display counts for: Pushed (New), Updated Local (Pull), and Updated Remote (Push).

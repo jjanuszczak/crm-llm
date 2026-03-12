@@ -25,8 +25,10 @@ def parse_frontmatter(content):
     data = {}
     for line in match.group(1).split('\n'):
         if ':' in line:
-            key, value = line.split(':', 1)
-            data[key.strip()] = value.strip().strip('"').strip("'")
+            parts = line.split(':', 1)
+            if len(parts) == 2:
+                key, value = parts
+                data[key.strip()] = value.strip().strip('"').strip("'")
     return data
 
 def get_local_tasks(tasks_dir):
@@ -83,37 +85,59 @@ def main():
     print(f"Using Task List: {tasklists['items'][0]['title']}")
     
     # 2. Get remote tasks (including completed ones)
-    # We need showHidden=True to see tasks completed in Google clients
     remote_tasks_data = run_gws(f"gws tasks tasks list --params '{{\"tasklist\": \"{list_id}\", \"showCompleted\": true, \"showHidden\": true}}'")
     remote_items = remote_tasks_data.get('items', []) if remote_tasks_data else []
     
-    remote_map = {t['title']: t['status'] for t in remote_items}
+    # Map by title -> list of {status, id} to handle potential duplicates
+    remote_map = {}
+    for t in remote_items:
+        title = t.get('title', 'Untitled')
+        if title not in remote_map:
+            remote_map[title] = []
+        remote_map[title].append({'status': t.get('status'), 'id': t.get('id')})
     
     # 3. Synchronize
     pushed_count = 0
-    updated_count = 0
+    updated_local_count = 0
+    updated_remote_count = 0
     
     for task in local_tasks:
-        remote_status = remote_map.get(task['title'])
+        task_title = task['title']
+        remote_occurrences = remote_map.get(task_title, [])
         
-        # PUSH: If local is active and doesn't exist remotely
-        if task['status'] in ['todo', 'in-progress'] and not remote_status:
-            print(f"Pushing to Google: {task['title']}...")
+        # PUSH NEW: If local is active and doesn't exist remotely at all
+        if task['status'] in ['todo', 'in-progress'] and not remote_occurrences:
+            print(f"Pushing to Google: {task_title}...")
             due_str = f"{task['due']}T00:00:00Z" if task['due'] else None
-            task_json = {"title": task['title']}
+            task_json = {"title": task_title}
             if due_str: task_json["due"] = due_str
             
             cmd = f"gws tasks tasks insert --params '{{\"tasklist\": \"{list_id}\"}}' --json '{json.dumps(task_json)}'"
             if run_gws(cmd):
                 pushed_count += 1
         
-        # PULL: If local is active but remote is completed
-        elif task['status'] in ['todo', 'in-progress'] and remote_status == 'completed':
-            print(f"Marking local task as COMPLETED: {task['title']}...")
-            update_local_task_status(task['full_path'], 'completed')
-            updated_count += 1
+        # SYNC STATUS
+        elif remote_occurrences:
+            # Check if any remote version is completed
+            remote_is_completed = any(o['status'] == 'completed' for o in remote_occurrences)
+            # Check if any remote version is still open (needsAction)
+            open_remote_ids = [o['id'] for o in remote_occurrences if o['status'] == 'needsAction']
             
-    print(f"Sync complete. Pushed: {pushed_count} | Updated Local: {updated_count}")
+            # PULL COMPLETION: If local is active but remote is completed
+            if task['status'] in ['todo', 'in-progress'] and remote_is_completed:
+                print(f"Marking local task as COMPLETED: {task_title}...")
+                update_local_task_status(task['full_path'], 'completed')
+                updated_local_count += 1
+            
+            # PUSH COMPLETION: If local is completed but remote is still open
+            elif task['status'] == 'completed' and open_remote_ids:
+                for rid in open_remote_ids:
+                    print(f"Marking Google task as COMPLETED: {task_title}...")
+                    patch_cmd = f"gws tasks tasks patch --params '{{\"tasklist\": \"{list_id}\", \"task\": \"{rid}\"}}' --json '{{\"status\": \"completed\"}}'"
+                    if run_gws(patch_cmd):
+                        updated_remote_count += 1
+            
+    print(f"Sync complete. Pushed: {pushed_count} | Updated Local: {updated_local_count} | Updated Remote: {updated_remote_count}")
 
 if __name__ == "__main__":
     main()

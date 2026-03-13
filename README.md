@@ -1,14 +1,13 @@
 # CRM Logic: Agentic Venture Brokerage & Personal CRM
 
-This repository contains the **Logic and Automation** for a personal agentic CRM system. It is designed to work with the [Gemini CLI](https://github.com/google/gemini-cli) to automate due diligence, deal tracking, and workspace synchronization.
+This repository contains the **Logic and Automation** for a personal agentic CRM system. It is designed to work with the [Gemini CLI](https://github.com/google/gemini-cli) to automate due diligence, relationship intelligence, and brokerage matchmaking.
 
-## 🏗 Architecture: The "Nested Repo" Strategy
+## 🏗 Architecture: The "System of Intelligence"
 
-This project follows a **decoupled architecture**:
+This project follows a **decoupled architecture** with a v3.0 Intelligence Layer:
 *   **Logic (This Repo):** Contains the skills, scripts, templates, and instructions for the agent. This is public-friendly.
-*   **Data (Private Vault):** Your actual CRM data (Accounts, Contacts, etc.) is stored in a separate directory (e.g., `crm-data/`) which is a standalone Git repository. This directory is nested within the logic repo but ignored by its version control.
-
-This strategy allows the agent to use native file tools (`read_file`, `write_file`) while keeping your private data securely isolated.
+*   **Data (Private Vault):** Your actual CRM data (Accounts, Contacts, etc.) is stored in a separate private Git repository (e.g., `crm-data/`). 
+*   **Intelligence Layer:** A passive telemetry engine that tracks relationship "warmth" and "velocity" without requiring manual data entry.
 
 ---
 
@@ -16,28 +15,19 @@ This strategy allows the agent to use native file tools (`read_file`, `write_fil
 
 ### 1. Prerequisites
 *   **[Gemini CLI](https://github.com/google/gemini-cli)** installed and authenticated.
-*   **[GWS CLI](https://github.com/googleworkspace/cli)** installed and authenticated (required for Google Tasks sync).
-*   **Python 3.x** for dashboarding and sync scripts.
-*   **Obsidian** (Optional) for a rich UI to view your data.
+*   **[GWS CLI](https://github.com/googleworkspace/cli)** installed and authenticated.
+*   **Python 3.x** for the intelligence engine and dashboarding.
 
-### 2. Installation
-Clone this repository and move into the directory:
-```bash
-git clone <this-repo-url> crm-logic
-cd crm-logic
+### 2. Configuration
+Create a `.env` file in the root directory:
+```text
+CRM_DATA_PATH=./crm-data
 ```
 
 ### 3. Initialize your Data Vault
-Create a new private data repository using the built-in skill:
+If starting from scratch, create a new private data repository:
 ```bash
-# This creates the folder structure and initializes a separate git repo
-python3 .gemini/skills/init-crm-data/scripts/init-vault.py my-crm-data
-```
-
-### 4. Configuration
-Create a `.env` file in the root directory:
-```text
-CRM_DATA_PATH=./my-crm-data
+python3 .gemini/skills/init-crm-data/scripts/init-vault.py crm-data
 ```
 
 ---
@@ -48,36 +38,38 @@ The agent can perform the following automated workflows:
 
 | Skill | Command | Description |
 | :--- | :--- | :--- |
-| **Init Vault** | `init-crm-data <name>` | Sets up a new nested data repository. |
-| **Dashboard** | `update-dashboard` | Refreshes `DASHBOARD.md` with active pipeline & tasks. |
-| **Workspace Sync** | `sync-workspace` | Scans Gmail/Calendar for updates on active contacts. |
-| **Task Sync** | `sync-google-tasks` | Bidirectional sync with Google Tasks via `gws` CLI. |
-| **Account DD** | `create-account` | Researches a company and generates a DD report. |
+| **Intelligence** | `update-dashboard` | **The Core Loop:** Refreshes `DASHBOARD.md`, `INTELLIGENCE.md`, and all relationship metrics. |
+| **Manage Intel** | `manage-intelligence`| Approve/Ignore new discoveries and trigger LinkedIn mapping. |
+| **Workspace Sync**| `sync-workspace` | Scans Gmail/Calendar for updates. Supports **Autonomous** and **Interactive** modes. |
+| **Matchmaker** | `matchmaker` | Autonomously suggests matches between **Deals** (inventory) and **Accounts** (investors). |
+| **Account DD** | `create-account` | Researches a company and generates a comprehensive DD report. |
 | **Contact Bio** | `create-contact` | Researches professional bios and engagement hooks. |
-| **Opportunities**| `create-opportunity` | Initiates deal tracking for a specific account. |
-| **Deal Flow** | `create-deal` | Captures startup inventory from Drive/Gmail/Web. |
-| **Daily Report** | `create-daily-report` | Synthesizes session actions into a structured progress report. |
+| **Deal Flow** | `create-deal` | Captures startup inventory and maps LinkedIn "Warm Paths". |
+| **Tasks** | `create-task` | Manages follow-ups with automatic linking to Activities. |
 
 ---
 
-## 📋 Operational Protocols
+## 📋 Core Concepts & Protocols
 
-### The State-Change Hook (Automatic Bookkeeping)
-Every time the agent creates or modifies a file in your data vault, it follows a strict protocol:
-1.  **Update Metadata:** Refreshes the `date-modified` field in the file's YAML frontmatter.
-2.  **Commit Change:** Automatically commits the change *within* the data subdirectory:
-    ```bash
-    cd $CRM_DATA_PATH && git add . && git commit -m "agent: [action]"
-    ```
-3.  **Refresh UI:** Runs `update-dashboard` to ensure your overview is current.
+### Deals vs. Accounts
+*   **Deal:** Inventory (startups/projects) seeking capital. Located in `Deals/`.
+*   **Account:** Clients or Partners paying for services (Advisory, Consulting). Located in `Accounts/`.
+*   *Note: A startup can be both a Deal and an Account.*
 
-### Communication Mandate
-To maintain consistency, the agent is configured to prioritize `operator@example.com` for all external Gmail communications.
+### The Notes Inbox
+The `Notes/` folder in your data vault acts as an "Inbox." Drop raw analyses or drafts there and tell the agent: *"Process note [X]."* The agent will execute the task and then convert the note into a formal `Activity`.
+
+### The Wikilink Property Standard (CRITICAL)
+All wikilinks in YAML frontmatter must be wrapped in double quotes to be functional in Obsidian:
+`account: "[[Account Name]]"`
+
+### Automatic Bookkeeping
+Every write operation to the data vault triggers an automatic `git add` and `git commit` within the `$CRM_DATA_PATH` to ensure a permanent audit trail.
 
 ---
 
 ## 📂 Directory Structure (Logic)
 *   `.gemini/skills/`: Specialized instruction sets for the agent.
-*   `templates/`: Markdown templates for Accounts, Contacts, Tasks, and Reports.
-*   `scripts/`: Shared utility scripts (e.g., note indexing).
+*   `templates/`: Markdown templates for all entities.
+*   `scripts/`: Core Python engines (`intelligence-engine.py`, `matchmaker.py`).
 *   `.env`: Local environment configuration.

@@ -2,6 +2,7 @@
 full-name: "{{Full Name}}"
 nickname: "{{Nickname}}"
 account: "[[{{Account Link}}]]"
+deal: "[[{{Deal Link}}]]"
 linkedin: "{{LinkedIn URL}}"
 email: "{{Email Address}}"
 mobile: "{{Mobile Number}}"
@@ -19,7 +20,7 @@ date-modified: "{{YYYY-MM-DD}}"
 # **Profile: {{Full Name}}**
 
 ## **Professional Overview**
-*   **Current Role:** {{Role}} at **[[{{Account Link}}]]**.
+*   **Current Role:** {{Role}} at **[[{{Account Link or Deal Link}}]]**.
 *   **Core Expertise:** {{Area 1, Area 2, Area 3}}.
 *   **Focus:** {{Brief description of current professional focus}}.
 

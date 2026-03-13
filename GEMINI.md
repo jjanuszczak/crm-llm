@@ -147,6 +147,14 @@ This system is optimized for a **Venture Brokerage and Strategic Advisory** mode
 *   `init-crm-data`: Initializes a new nested data repository with standard folders and git config.
 *   `create-daily-report`: Synthesizes session actions into a structured report saved in `Reports/`.
 
+### The Notes Inbox Protocol
+1.  **Ingestion:** User saves raw analysis, drafts, or snippets in `CRM_DATA_PATH/Notes/`.
+2.  **Trigger:** User instructs: "Process note [X] to [Send Email/Update Deal]."
+3.  **Action:** Agent reads the note, executes the requested task (e.g., drafts email), and then converts the note into a formal `Activity`.
+4.  **Conversion:** The original file is moved to `CRM_DATA_PATH/Activities/` with a new name (e.g., `YYYY-MM-DD - analysis - [Subject].md`) and appropriate YAML frontmatter.
+5.  **Linking:** Agent ensures the new Activity is wikilinked to the relevant [[Account]] or [[Contact]].
+6.  **Cleanup:** If the user prefers, the original file in `Notes/` can be moved to `CRM_DATA_PATH/.trash/` after conversion.
+
 ## Operational Mandates & Hooks
 
 ### 0. Suppression Notice (TEMPORARY)
@@ -167,9 +175,15 @@ Immediately after creating or modifying any entity file:
 3. Run `update-dashboard`.
 
 ### 3. Communication Mandate (CRITICAL)
-- **Default Email:** ALWAYS use `operator@example.com` as the sender account for all Gmail operations unless otherwise specified.
+- **Settings Resolution:** Before any Gmail or communication operation, the agent MUST read `CRM_DATA_PATH/settings.json` to resolve the current user preferences.
+- **Default Sender:** ALWAYS use the `preferred_email` found in settings for all primary Gmail operations unless otherwise specified.
+- **Agent Identity:** The `agent_email` in settings should be used if the user requests an action to be sent "from the agent" or for automated status updates.
 
 ## Usage Guidelines
 *   **Wikilinks:** Maintain deep interconnection. Link Contacts to Accounts and Tasks to Opportunities.
+*   **Wikilink Property Standard (CRITICAL):** All wikilinks stored in YAML frontmatter MUST be wrapped in double quotes. This is mandatory for the links to be functional in Obsidian.
+    *   **Correct:** `account: "[[Account Name]]"`
+    *   **Correct:** `deal: "[[Deal Name]]"`
+    *   **Incorrect:** `account: [[Account Name]]` (The brackets alone cause parsing failure in YAML)
 *   **Currency:** Retain original currency (e.g., PHP) but provide **USD conversions** (e.g., `₱20M (~$360k)`).
 *   **Dates:** Always use `YYYY-MM-DD` format.

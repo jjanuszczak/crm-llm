@@ -60,7 +60,12 @@ def update_frontmatter(file_path, new_data):
     if fm is None: return
     fm.update(new_data)
     fm_lines = ["---"]
-    for k, v in fm.items(): fm_lines.append(f"{k}: {v}")
+    for k, v in fm.items():
+        # If the value is a wikilink (contains [[), ensure it is quoted
+        val = str(v)
+        if "[[" in val and not (val.startswith('"') or val.startswith("'")):
+            val = f'"{val}"'
+        fm_lines.append(f"{k}: {val}")
     fm_lines.append("---\n")
     with open(file_path, 'w', encoding='utf-8') as f: f.write("\n".join(fm_lines) + body)
 
@@ -143,17 +148,21 @@ def main():
                 if (stat == "cold" and fm.get('priority') in ['high', 'medium']) or vel >= 3:
                     at_risk.append({'name': name, 'type': 'Contact', 'status': stat, 'velocity': vel, 'days': days})
                 
-                # Aggregate for account
+                # Aggregate for account or deal
                 acc_link = fm.get('account', '').replace('[[', '').replace(']]', '')
-                if acc_link:
-                    if acc_link not in account_stats: account_stats[acc_link] = []
-                    account_stats[acc_link].append(score)
+                deal_link = fm.get('deal', '').replace('[[', '').replace(']]', '')
+                parent = acc_link if acc_link else deal_link
+                
+                if parent:
+                    if parent not in account_stats: account_stats[parent] = []
+                    account_stats[parent].append(score)
 
-    # 2. Process Accounts
-    if os.path.exists(ACCOUNTS_DIR):
-        for f in os.listdir(ACCOUNTS_DIR):
+    # 2. Process Accounts and Deal-Flow
+    for directory in [ACCOUNTS_DIR, os.path.join(CRM_DATA_PATH, "Deal-Flow")]:
+        if not os.path.exists(directory): continue
+        for f in os.listdir(directory):
             if f.endswith(".md"):
-                path = os.path.join(ACCOUNTS_DIR, f)
+                path = os.path.join(directory, f)
                 name = f[:-3]
                 try:
                     with open(path, 'r', encoding='utf-8', errors='ignore') as rf:
@@ -165,11 +174,10 @@ def main():
                 vel = get_velocity(fm.get('email'), interactions_cache)
                 score, stat, days = calculate_warmth(last_date, fm.get('priority', 'medium'), vel)
                 
-                # Relational Graphing: Calculate Account Warmth Index
+                # Relational Graphing: Calculate Account/Deal Warmth Index
                 linked_scores = account_stats.get(name, [])
                 if linked_scores:
                     avg_score = sum(linked_scores) / len(linked_scores)
-                    # Bonus for quantity of connections
                     acc_index = min(100, int(avg_score + (len(linked_scores) * 5)))
                 else:
                     acc_index = score
@@ -182,7 +190,8 @@ def main():
                 })
                 
                 if (stat == "cold" and fm.get('priority') in ['high', 'medium']) or vel >= 3:
-                    at_risk.append({'name': name, 'type': 'Account', 'status': stat, 'velocity': vel, 'days': days, 'index': acc_index})
+                    type_label = 'Account' if 'Accounts' in directory else 'Deal'
+                    at_risk.append({'name': name, 'type': type_label, 'status': stat, 'velocity': vel, 'days': days, 'index': acc_index})
 
     # 3. Generate INTELLIGENCE.md
     print(f"Generating {INTELLIGENCE_DASHBOARD}...")

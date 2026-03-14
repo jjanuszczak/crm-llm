@@ -1,0 +1,297 @@
+import argparse
+import os
+import sys
+from datetime import date
+
+from frontmatter_utils import load_frontmatter_file, parse_markdown_frontmatter, serialize_frontmatter, write_frontmatter_file
+from lead_manager import get_crm_data_path, slugify, link_for
+
+
+VALID_STATUSES = {"new", "processing", "processed", "ignored"}
+VALID_SOURCES = {"manual", "gmail", "calendar", "voice", "inbox-forward"}
+LOGIC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
+INBOX_TEMPLATE_PATH = os.path.join(LOGIC_ROOT, "templates", "inbox-template.md")
+NOTE_TEMPLATE_PATH = os.path.join(LOGIC_ROOT, "templates", "note-template.md")
+ACTIVITY_TEMPLATE_PATH = os.path.join(LOGIC_ROOT, "templates", "activity-template.md")
+
+CRM_DATA_PATH = get_crm_data_path()
+INBOX_DIR = os.path.join(CRM_DATA_PATH, "Inbox")
+NOTES_DIR = os.path.join(CRM_DATA_PATH, "Notes")
+ACTIVITIES_DIR = os.path.join(CRM_DATA_PATH, "Activities")
+TASKS_DIR = os.path.join(CRM_DATA_PATH, "Tasks")
+LEADS_DIR = os.path.join(CRM_DATA_PATH, "Leads")
+
+
+def ensure_dirs():
+    for directory in [INBOX_DIR, NOTES_DIR, ACTIVITIES_DIR, TASKS_DIR, LEADS_DIR]:
+        os.makedirs(directory, exist_ok=True)
+
+
+def render_template(path, replacements):
+    with open(path, "r", encoding="utf-8") as handle:
+        rendered = handle.read()
+    for key, value in replacements.items():
+        rendered = rendered.replace(f"{{{{{key}}}}}", value)
+    return rendered
+
+
+def find_inbox_path(identifier):
+    if os.path.isfile(identifier):
+        return identifier
+
+    candidate = os.path.join(INBOX_DIR, identifier)
+    if os.path.exists(candidate):
+        return candidate
+
+    if not identifier.endswith(".md"):
+        candidate_md = os.path.join(INBOX_DIR, f"{identifier}.md")
+        if os.path.exists(candidate_md):
+            return candidate_md
+
+        slug_path = os.path.join(INBOX_DIR, f"{slugify(identifier)}.md")
+        if os.path.exists(slug_path):
+            return slug_path
+
+    raise FileNotFoundError(f"Inbox item not found: {identifier}")
+
+
+def create_inbox_item(args):
+    ensure_dirs()
+    if args.source not in VALID_SOURCES:
+        raise ValueError(f"Invalid source '{args.source}'.")
+
+    item_id = slugify(args.title)
+    file_path = os.path.join(INBOX_DIR, f"{item_id}.md")
+    if os.path.exists(file_path):
+        raise FileExistsError(f"Inbox item already exists: {file_path}")
+
+    today = date.today().strftime("%Y-%m-%d")
+    rendered = render_template(
+        INBOX_TEMPLATE_PATH,
+        {
+            "inbox-id": item_id,
+            "Inbox Item Title": args.title,
+            "Owner": args.owner,
+            "manual | gmail | calendar | voice | inbox-forward": args.source,
+            "Source Reference": args.source_ref or "",
+            "YYYY-MM-DD": today,
+        },
+    )
+
+    frontmatter, body = parse_markdown_frontmatter(rendered)
+    body = body.replace("{{Paste or summarize the raw input here.}}", args.content or "")
+    if args.processing_notes:
+        body = body.replace("{{Optional AI or user notes about how this should be triaged.}}", args.processing_notes)
+
+    write_frontmatter_file(file_path, frontmatter, body)
+    print(file_path)
+
+
+def update_status(path, status):
+    if status not in VALID_STATUSES:
+        raise ValueError(f"Invalid inbox status '{status}'.")
+    frontmatter, body = load_frontmatter_file(path)
+    frontmatter["status"] = status
+    frontmatter["date-modified"] = date.today().strftime("%Y-%m-%d")
+    write_frontmatter_file(path, frontmatter, body)
+
+
+def note_path(title):
+    return os.path.join(NOTES_DIR, f"{slugify(title)}.md")
+
+
+def activity_path(title):
+    return os.path.join(ACTIVITIES_DIR, f"{slugify(title)}.md")
+
+
+def create_note_from_inbox(frontmatter, parent_type, parent_name):
+    note_id = f"{frontmatter['id']}-note"
+    title = frontmatter["title"]
+    file_path = note_path(title)
+    if os.path.exists(file_path):
+        return file_path
+
+    rendered = render_template(
+        NOTE_TEMPLATE_PATH,
+        {
+            "note-id": note_id,
+            "Note Title": title,
+            "Owner": frontmatter.get("owner", "john"),
+            "lead | contact | account | opportunity | deal | activity": parent_type,
+            "Primary Parent": parent_name,
+            "Secondary Link 1": parent_name,
+            "manual | inbox | gmail | calendar | ai-generated": "inbox",
+            "Source Reference": frontmatter.get("id", ""),
+            "YYYY-MM-DD": date.today().strftime("%Y-%m-%d"),
+        },
+    )
+    note_frontmatter, note_body = parse_markdown_frontmatter(rendered)
+    note_frontmatter["secondary-links"] = []
+    note_body = note_body.replace("{{Durable background, interpretation, research, or strategic memory.}}", "Created from Inbox processing.")
+    write_frontmatter_file(file_path, note_frontmatter, note_body)
+    return file_path
+
+
+def create_activity_from_inbox(frontmatter, parent_type, parent_name):
+    activity_id = f"{frontmatter['id']}-activity"
+    title = frontmatter["title"]
+    file_path = activity_path(title)
+    if os.path.exists(file_path):
+        return file_path
+
+    rendered = render_template(
+        ACTIVITY_TEMPLATE_PATH,
+        {
+            "activity-id": activity_id,
+            "Activity Name": title,
+            "call | email | meeting | analysis | note-derived": "note-derived",
+            "Owner": frontmatter.get("owner", "john"),
+            "YYYY-MM-DD": date.today().strftime("%Y-%m-%d"),
+            "opportunity | contact | account | lead | deal": parent_type,
+            "Primary Parent": parent_name,
+            "Secondary Link 1": parent_name,
+            "manual | gmail | calendar | inbox": "inbox",
+            "Source Reference": frontmatter.get("id", ""),
+            "email-link": "",
+            "meeting-notes": "",
+        },
+    )
+    activity_frontmatter, activity_body = parse_markdown_frontmatter(rendered)
+    activity_frontmatter["secondary-links"] = []
+    activity_body = activity_body.replace("{{A brief (1-2 sentence) description of the purpose of this activity.}}", "Created from Inbox processing.")
+    activity_body = activity_body.replace("{{activity-name}}", title)
+    write_frontmatter_file(file_path, activity_frontmatter, activity_body)
+    return file_path
+
+
+def create_task_from_inbox(frontmatter, opportunity_name=""):
+    title = frontmatter["title"]
+    file_path = os.path.join(TASKS_DIR, f"{slugify(title)}.md")
+    if os.path.exists(file_path):
+        return file_path
+
+    today = date.today().strftime("%Y-%m-%d")
+    content = (
+        "---\n"
+        f'task-name: "{title}"\n'
+        "status: todo\n"
+        "priority: medium\n"
+        f"due-date: {today}\n"
+        f"date-created: {today}\n"
+        f"date-modified: {today}\n"
+        'account: ""\n'
+        'contact: ""\n'
+        f'opportunity: "{link_for("Opportunities", slugify(opportunity_name)) if opportunity_name else ""}"\n'
+        "type: follow-up\n"
+        'email-link: ""\n'
+        'meeting-notes: ""\n'
+        "---\n\n"
+        f"# **Task: {title}**\n\n## **Description**\nCreated from Inbox processing.\n"
+    )
+    with open(file_path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    return file_path
+
+
+def create_lead_from_inbox(frontmatter):
+    lead_name = frontmatter["title"]
+    file_path = os.path.join(LEADS_DIR, f"{slugify(lead_name)}.md")
+    if os.path.exists(file_path):
+        return file_path
+
+    today = date.today().strftime("%Y-%m-%d")
+    content = (
+        "---\n"
+        f'id: "{slugify(lead_name)}"\n'
+        f'lead-name: "{lead_name}"\n'
+        'status: "new"\n'
+        f'owner: "{frontmatter.get("owner", "john")}"\n'
+        'lead-source: "inbox"\n'
+        'person-name: ""\n'
+        'company-name: ""\n'
+        'email: ""\n'
+        'linkedin: ""\n'
+        'priority: "medium"\n'
+        f'source-ref: "{frontmatter.get("id", "")}"\n'
+        f"date-created: {today}\n"
+        f"date-modified: {today}\n"
+        "---\n\n"
+        f"# **Lead: {lead_name}**\n\n## **Summary**\nCreated from Inbox processing.\n"
+    )
+    with open(file_path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    return file_path
+
+
+def process_inbox_item(args):
+    ensure_dirs()
+    path = find_inbox_path(args.item)
+    frontmatter, body = load_frontmatter_file(path)
+    outputs = []
+    parent_type = args.primary_parent_type
+    parent_name = args.primary_parent
+
+    if "note" in args.outputs:
+        if not parent_type or not parent_name:
+            raise ValueError("Creating a note from Inbox requires --primary-parent-type and --primary-parent.")
+        outputs.append(("note", create_note_from_inbox(frontmatter, parent_type, parent_name)))
+
+    if "activity" in args.outputs:
+        if not parent_type or not parent_name:
+            raise ValueError("Creating an activity from Inbox requires --primary-parent-type and --primary-parent.")
+        outputs.append(("activity", create_activity_from_inbox(frontmatter, parent_type, parent_name)))
+
+    if "task" in args.outputs:
+        outputs.append(("task", create_task_from_inbox(frontmatter, args.opportunity_name or "")))
+
+    if "lead" in args.outputs:
+        outputs.append(("lead", create_lead_from_inbox(frontmatter)))
+
+    if args.delete_processed:
+        os.remove(path)
+        print(f"deleted: {path}")
+    else:
+        update_status(path, "processed")
+        print(f"processed: {path}")
+
+    for record_type, output_path in outputs:
+        print(f"{record_type}: {output_path}")
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description="Manage v4 Inbox items.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    create_parser = subparsers.add_parser("create", help="Create a new inbox item.")
+    create_parser.add_argument("--title", required=True)
+    create_parser.add_argument("--source", default="manual")
+    create_parser.add_argument("--owner", default="john")
+    create_parser.add_argument("--source-ref")
+    create_parser.add_argument("--content")
+    create_parser.add_argument("--processing-notes")
+    create_parser.set_defaults(func=create_inbox_item)
+
+    process_parser = subparsers.add_parser("process", help="Process an inbox item into durable outputs.")
+    process_parser.add_argument("item")
+    process_parser.add_argument("--outputs", nargs="+", required=True, choices=["note", "activity", "task", "lead"])
+    process_parser.add_argument("--primary-parent-type")
+    process_parser.add_argument("--primary-parent")
+    process_parser.add_argument("--opportunity-name")
+    process_parser.add_argument("--delete-processed", action="store_true")
+    process_parser.set_defaults(func=process_inbox_item)
+
+    return parser
+
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        args.func(args)
+    except Exception as exc:  # pragma: no cover - CLI errors
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

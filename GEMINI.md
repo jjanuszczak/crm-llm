@@ -56,10 +56,10 @@ Running `update-dashboard` triggers a sequential chain:
 4.  **Dashboard Generation:** Refreshes `DASHBOARD.md` and `INTELLIGENCE.md`.
 5.  **Bookkeeping:** Commits all telemetry and file updates to the data repo.
 
-### 2. The Notes Inbox Protocol
-1.  **Ingestion:** User saves raw analysis/drafts in `CRM_DATA_PATH/Notes/`.
-2.  **Action:** Agent reads the note, executes the task (e.g. sends email), and converts the note into a formal `Activity`.
-3.  **Cleanup:** Original note is moved to `CRM_DATA_PATH/.trash/`.
+### 2. The Inbox Protocol
+1.  **Ingestion:** User saves raw analysis/drafts in `CRM_DATA_PATH/Inbox/`.
+2.  **Action:** Agent reads the Inbox item, executes the task, and processes it into durable records such as `Note`, `Activity`, `Task`, or `Lead`.
+3.  **Cleanup:** The Inbox item is marked processed or deleted from the active queue once durable outputs are created.
 
 ### 3. Communication Mandate
 - **Settings Resolution:** Always read `CRM_DATA_PATH/settings.json` for sender preferences.

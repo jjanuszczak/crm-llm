@@ -16,9 +16,12 @@ Initializes a new CRM data repository as a nested subdirectory within the `crm-l
     *   Create the following standard subdirectories:
         *   `Accounts/`
         *   `Contacts/`
+        *   `Leads/`
         *   `Opportunities/`
         *   `Deals/`
         *   `Activities/`
+        *   `Notes/`
+        *   `Inbox/`
         *   `Tasks/`
         *   `Reports/`
         *   `.obsidian/` (to support the Obsidian UI)

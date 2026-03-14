@@ -57,8 +57,8 @@ The agent can perform the following automated workflows:
 *   **Account:** Clients or Partners paying for services (Advisory, Consulting). Located in `Accounts/`.
 *   *Note: A startup can be both a Deal and an Account.*
 
-### The Notes Inbox
-The `Notes/` folder in your data vault acts as an "Inbox." Drop raw analyses or drafts there and tell the agent: *"Process note [X]."* The agent will execute the task and then convert the note into a formal `Activity`.
+### The Inbox
+The `Inbox/` folder in your data vault is the raw capture queue. Drop unprocessed analyses, meeting scraps, or drafts there and tell the agent to process the item into durable records such as `Notes`, `Activities`, `Tasks`, or `Leads`.
 
 ### The Wikilink Property Standard (CRITICAL)
 All wikilinks in YAML frontmatter must be wrapped in double quotes to be functional in Obsidian:

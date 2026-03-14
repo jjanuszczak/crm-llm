@@ -20,48 +20,62 @@ This system is optimized for a **Venture Brokerage and Strategic Advisory** mode
     `cd $CRM_DATA_PATH && git add . && git commit -m "agent: [action performed]"`
 4.  **Template Mandate:** ALL new entity files MUST be based on the corresponding file in `templates/`.
 
-## Entity Schemas (v3.0)
+## Entity Model (v4.0)
 
-### 1. Accounts & Deal-Flow
-*   **YAML Frontmatter:**
-    ```yaml
-    company-name: "String"
-    warmth-score: 0-100 (managed by engine)
-    warmth-status: "warm" | "neutral" | "cold"
-    velocity-score: Number (interactions in last 7 days)
-    account-warmth-index: 0-100 (aggregated from contacts)
-    last-contacted: YYYY-MM-DD
-    date-modified: YYYY-MM-DD
-    ```
+### 1. Inbox
+*   `Inbox/` is the temporary raw capture queue.
+*   Inbox items are processed into durable records and then deleted or marked processed.
+*   Raw capture should not go straight into `Notes/` by default.
 
-### 2. Contacts
-*   **YAML Frontmatter:**
-    ```yaml
-    full-name: "String"
-    account: "[[Link to Account]]" # If a Client
-    deal: "[[Link to Deal]]"       # If a Startup/Inventory
-    email: "String"
-    status: "qualified" | "lead" | "contacted"
-    warmth-score: 0-100
-    velocity-score: 0-100
-    ```
+### 2. Notes
+*   `Notes/` are first-class durable context records.
+*   Notes use one `primary-parent` plus optional `secondary-links`.
+*   Notes may exist without a paired `Activity` if they represent strategic context rather than a discrete event.
+
+### 3. Activities
+*   `Activities/` are first-class event records.
+*   If a source item describes a real interaction, it should produce an `Activity`.
+*   Activities follow the same parent-linking pattern as `Notes`.
+
+### 4. Leads
+*   `Leads/` are first-class pre-conversion records.
+*   Supported statuses:
+    *   `new`
+    *   `prospect`
+    *   `engaged`
+    *   `qualified`
+    *   `converted`
+    *   `disqualified`
+*   Default conversion path:
+    *   `Lead -> Contact + Account + Opportunity`
+
+### 5. Relationships
+*   `Accounts/`, `Contacts/`, and `Opportunities/` remain the core durable relationship records.
+*   Dashboarding and memory generation should treat relationship context as the combination of linked Notes, Activities, Tasks, Opportunities, and Workspace telemetry.
 
 ## Automated Workflows
 
-### 1. The Intelligence Loop (`update-dashboard`)
+### 1. The Dashboard Loop (`update-dashboard`)
 Running `update-dashboard` triggers a sequential chain:
-1.  **Index Notes:** Identifies all entities.
-2.  **Matchmaker:** Suggests Deal-Investor fits.
-3.  **Intelligence Engine:** Calculates warmth/velocity from `staging/interactions.json` and `Activities/`.
-4.  **Dashboard Generation:** Refreshes `DASHBOARD.md` and `INTELLIGENCE.md`.
-5.  **Bookkeeping:** Commits all telemetry and file updates to the data repo.
+1.  **Relationship Assembly:** Scans Accounts, Contacts, Opportunities, Leads, Tasks, Activities, and Notes.
+2.  **Dashboard Generation:** Refreshes `DASHBOARD.md` as a relationship-first home view.
+3.  **Matchmaker:** Suggests Deal-Investor fits.
+4.  **Intelligence Engine:** Refreshes relationship telemetry and `INTELLIGENCE.md`.
+5.  **Relationship Memory:** Refreshes `RELATIONSHIP_MEMORY.md`.
+6.  **Bookkeeping:** Commits generated outputs to the data repo unless explicitly skipped.
 
 ### 2. The Inbox Protocol
 1.  **Ingestion:** User saves raw analysis/drafts in `CRM_DATA_PATH/Inbox/`.
 2.  **Action:** Agent reads the Inbox item, executes the task, and processes it into durable records such as `Note`, `Activity`, `Task`, or `Lead`.
 3.  **Cleanup:** The Inbox item is marked processed or deleted from the active queue once durable outputs are created.
 
-### 3. Communication Mandate
+### 3. Legacy Note Handling
+Legacy `Notes/` files must be evaluated explicitly:
+1.  If the file contains durable context, keep it as a `Note`.
+2.  If it describes a real interaction, migrate it toward an `Activity` and optionally a supporting `Note`.
+3.  If it was only temporary scratch capture, do not preserve the old “Notes as inbox” behavior. Prefer `Inbox/` for future raw intake.
+
+### 4. Communication Mandate
 - **Settings Resolution:** Always read `CRM_DATA_PATH/settings.json` for sender preferences.
 - **Default Sender:** Use `preferred_email` for primary tasks.
 - **Agent Identity:** Use `agent_email` (e.g. `leia@oakridgesadvisors.com`) for administrative or introductory tasks.

@@ -1,10 +1,10 @@
 # Skill: Update Dashboard
 
 ## Description
-Refreshes the `CRM_DATA_PATH/DASHBOARD.md` file by aggregating data from the `CRM_DATA_PATH/Opportunities/`, `CRM_DATA_PATH/Tasks/`, and `CRM_DATA_PATH/Activities/` directories. This ensures a real-time, high-level overview of the vault's state.
+Refreshes the `CRM_DATA_PATH/DASHBOARD.md` file as a relationship-first home view. It prioritizes relationships needing attention, recently active/heating-up relationships, qualified leads, and recommended next actions while still keeping a compact opportunity snapshot and recent memory view.
 
 ## Usage
-`update-dashboard`
+`update-dashboard [--skip-followups] [--skip-commit]`
 
 ## Implementation Steps
 
@@ -12,36 +12,30 @@ Refreshes the `CRM_DATA_PATH/DASHBOARD.md` file by aggregating data from the `CR
     *   Read `CRM_DATA_PATH` from `.env`.
     *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
-2.  **Aggregate Opportunities:**
-    *   Scan `CRM_DATA_PATH/Opportunities/`.
-    *   Extract `opportunity-name`, `stage`, `probability`, `close-date`, and `account`.
-    *   Filter for `is-active: true`.
-    *   Format into the "Active Opportunities" table.
+2.  **Assemble Relationship Context:**
+    *   Scan `CRM_DATA_PATH/Accounts/`, `Contacts/`, `Opportunities/`, `Leads/`, `Tasks/`, `Activities/`, and `Notes/`.
+    *   Normalize legacy bare links, path-qualified wikilinks, and slug-style links so older records still connect.
+    *   Build relationship candidates around active opportunities using linked account, primary contact, tasks, activities, and notes.
 
-3.  **Aggregate Tasks:**
-    *   Scan `CRM_DATA_PATH/Tasks/`.
-    *   Filter for `status: todo` or `status: in-progress`.
-    *   Sort by `due-date` (ascending).
-    *   Format into the "Upcoming Tasks" table.
+3.  **Score Dashboard Sections:**
+    *   `Relationships Needing Attention`: rank by a composite attention score using warmth, priority, overdue work, due-soon work, and opportunity signal.
+    *   `Recently Active / Heating Up`: rank by recent activity and velocity.
+    *   `Qualified Leads / Near Conversion`: show only `qualified` leads.
+    *   `Recommended Next Actions`: rank open tasks by due date, priority, and linked opportunity probability.
 
-4.  **Synthesize Insights:**
-    *   Review recent files in `CRM_DATA_PATH/Activities/` (last 7 days).
-    *   Identify strategic shifts, momentum changes, or new "Engagement Hooks."
-    *   Update the "Strategic Insights" section.
+4.  **Render Supporting Views:**
+    *   Add a compact active opportunities snapshot.
+    *   Add a recent memory section combining Notes and Activities.
+    *   Generate a short summary section from the highest-signal relationship and execution items.
 
-5.  **Audit Suggestions:**
-    *   Cross-reference "Next Steps" in Opportunities and Tasks.
-    *   Propose new tasks based on missing Due Diligence (Accounts) or pending intro calls.
-
-6.  **File Update:**
-    *   Overwrite `CRM_DATA_PATH/DASHBOARD.md` with the refreshed content.
+5.  **File Update:**
+    *   Overwrite `CRM_DATA_PATH/DASHBOARD.md` with the refreshed v4 relationship-first dashboard.
     *   Update the "Last Updated" timestamp.
 
-7.  **Automatic Bookkeeping:**
-    *   Commit the updated dashboard to the nested data repository:
-        ```bash
-        cd $CRM_DATA_PATH && git add DASHBOARD.md && git commit -m "agent: updated dashboard"
-        ```
+6.  **Optional Follow-Ups:**
+    *   Unless `--skip-followups` is passed, run `matchmaker.py` and `intelligence-engine.py`.
+    *   Unless `--skip-commit` is passed, commit only scoped generated outputs in the nested CRM data repo.
+    *   Do not sweep unrelated vault files into the commit.
 
-8.  **Output:**
-    *   Confirm the dashboard update to the user.
+7.  **Output:**
+    *   Confirm the dashboard update to the user and note whether follow-ups/commit were skipped.

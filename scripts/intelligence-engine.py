@@ -100,7 +100,7 @@ def calculate_warmth(last_contacted_date, priority, velocity=0):
     return score, status, days_since
 
 def main():
-    print("Running Intelligence Engine v3.0...")
+    print("Running Intelligence Engine...")
     activities_data = []
     if os.path.exists(ACTIVITIES_DIR):
         for f in os.listdir(ACTIVITIES_DIR):

@@ -1,7 +1,7 @@
 # Skill: Manage Intelligence
 
 ## Description
-Manage the V2 Intelligence Layer by approving or ignoring discovered entities and manually refreshing intelligence metrics.
+Manage staged discoveries and intelligence outputs in the v4 memory system.
 
 ## Usage
 - `approve-discovery [name]`: Converts a staged discovery into a formal Account/Contact file.

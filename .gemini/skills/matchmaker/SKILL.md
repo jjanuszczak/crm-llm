@@ -13,8 +13,9 @@ Runs the brokerage matchmaker to identify likely matches between `Deals` / `Deal
     *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
 2.  **Load Inventory:**
-    *   Scan `CRM_DATA_PATH/Deal-Flow/` for markdown deal files.
-    *   Parse frontmatter for sector, stage, and raise information.
+    *   Scan the canonical `CRM_DATA_PATH/Deals/` directory for markdown deal files.
+    *   If a legacy vault still uses `Deal-Flow/`, fall back to that path for compatibility.
+    *   Parse frontmatter for sector, fundraising stage, and raise information.
 
 3.  **Load Investor Accounts:**
     *   Scan `CRM_DATA_PATH/Accounts/` for markdown account files.

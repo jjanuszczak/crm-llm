@@ -4,6 +4,10 @@ import json
 from frontmatter_utils import load_frontmatter_file
 
 def get_crm_data_path():
+    env_override = os.getenv("CRM_DATA_PATH")
+    if env_override:
+        return os.path.abspath(env_override)
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     logic_root = os.path.abspath(os.path.join(script_dir, "../"))
     env_path = os.path.join(logic_root, ".env")
@@ -16,9 +20,18 @@ def get_crm_data_path():
     return os.getenv("CRM_DATA_PATH", os.getcwd())
 
 CRM_DATA_PATH = get_crm_data_path()
-DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deal-Flow")
+DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deals")
+LEGACY_DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deal-Flow")
 ACCOUNTS_DIR = os.path.join(CRM_DATA_PATH, "Accounts")
 MATCHES_PATH = os.path.join(CRM_DATA_PATH, "staging/matches.json")
+
+
+def deal_directories():
+    directories = []
+    for directory in [DEALS_DIR, LEGACY_DEALS_DIR]:
+        if os.path.exists(directory):
+            directories.append(directory)
+    return directories
 
 def calculate_match(deal, account):
     score = 0
@@ -40,7 +53,7 @@ def calculate_match(deal, account):
         score += 30
         
     # 3. Stage Match
-    d_stage = deal.get('stage', '').lower()
+    d_stage = str(deal.get('fundraising-stage') or deal.get('stage', '')).lower()
     a_type = account.get('type', '').lower()
     if a_type == 'investor':
         score += 10 # Default bonus for investors
@@ -50,12 +63,18 @@ def calculate_match(deal, account):
 def main():
     print("Running Brokerage Matchmaker...")
     deals = []
-    if os.path.exists(DEALS_DIR):
-        for f in os.listdir(DEALS_DIR):
-            if f.endswith(".md"):
-                fm, _ = load_frontmatter_file(os.path.join(DEALS_DIR, f))
-                if fm:
-                    deals.append({'name': f[:-3], 'fm': fm})
+    seen_paths = set()
+    for directory in deal_directories():
+        for f in os.listdir(directory):
+            if not f.endswith(".md"):
+                continue
+            path = os.path.join(directory, f)
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            fm, _ = load_frontmatter_file(path)
+            if fm:
+                deals.append({'name': f[:-3], 'fm': fm})
 
     accounts = []
     if os.path.exists(ACCOUNTS_DIR):

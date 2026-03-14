@@ -28,11 +28,23 @@ Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. A **Deal** is 
     *   Identify founders from the research.
     *   For each founder, run the `create-contact` skill to establish their profile in `CRM_DATA_PATH/Contacts/`.
 
-4.  **Deal-Flow Entry (Using `templates/deal-template.md`):**
-    *   **Frontmatter:** Populate `startup-name`, `sector`, `stage`, and `location`. Set `google-drive-url` to the URL of the folder found in Step 1. Set `date-sourced` and `date-modified` to the current date.
+4.  **Deal Entry (Using `templates/deal-template.md`):**
+    *   **Frontmatter:** Populate:
+        *   `id`
+        *   `owner`
+        *   `startup-name`
+        *   `sector`
+        *   `fundraising-stage`
+        *   `coverage-status`
+        *   `location`
+        *   `source`
+        *   `source-ref`
+    *   Set `google-drive-url` to the URL of the folder found in Step 1.
+    *   Set `date-sourced` and `date-modified` to the current date.
     *   **Body:** Synthesize the "Executive Summary," "Problem & Solution," and "Investment Highlights" based on the research.
     *   **Due Diligence:** Mark "Pitch Deck Reviewed" and "Tech/Product Demo" as checked if the corresponding sources were analyzed.
     *   **Brokerage Strategy:** Link the `target-client` if provided.
+    *   Add structured links such as `founder-contacts`, `related-accounts`, and `related-opportunities` when known.
 
 5.  **Opportunity Linking (Optional):**
     *   If a `target-client` is provided, run the `create-opportunity` skill to create a referral opportunity in `CRM_DATA_PATH/Opportunities/` (e.g., "[[Account Name]] - [[Startup Name]] Deal Flow - [YYYY]").
@@ -40,12 +52,17 @@ Captures a new startup into the `CRM_DATA_PATH/Deals/` inventory. A **Deal** is 
 6.  **File Creation & Dashboard:**
     *   Write the deal entry to `CRM_DATA_PATH/Deals/[Startup-Name].md`.
 
-7.  **Automatic Bookkeeping:**
+7.  **Compatibility Note:**
+    *   `fundraising-stage` is the clearer v4 field replacing the old ambiguous `stage`.
+    *   `Deals/` should be treated as the canonical inventory directory.
+    *   Older private vaults or scripts may still reference `Deal-Flow/`; support should remain backward-compatible until those paths are fully migrated.
+
+8.  **Automatic Bookkeeping:**
     *   Commit the new file to the nested data repository:
         ```bash
         cd $CRM_DATA_PATH && git add "Deals/[Startup-Name].md" && git commit -m "agent: added deal [Startup-Name]"
         ```
     *   Run `update-dashboard`.
 
-8.  **Output:**
+9.  **Output:**
     *   Confirm the creation of the deal, contacts, and opportunity to the user.

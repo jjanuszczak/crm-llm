@@ -36,6 +36,8 @@ MATCHES_PATH = os.path.join(STAGING_DIR, "matches.json")
 INTERACTIONS_PATH = os.path.join(STAGING_DIR, "interactions.json")
 INTELLIGENCE_DASHBOARD = os.path.join(CRM_DATA_PATH, "INTELLIGENCE.md")
 RELATIONSHIP_MEMORY_SCRIPT = os.path.join(os.path.dirname(__file__), "relationship_memory.py")
+DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deals")
+LEGACY_DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deal-Flow")
 
 PRIORITY_THRESHOLDS = {'high': 14, 'medium': 30, 'low': 90, 'default': 30}
 
@@ -86,6 +88,14 @@ def get_latest_interaction_date(entity_name, entity_email, activities_data, inte
 def get_velocity(entity_email, interactions_cache):
     if not entity_email or not interactions_cache or entity_email not in interactions_cache: return 0
     return interactions_cache[entity_email].get('hits_last_7_days', 0)
+
+
+def deal_directories():
+    directories = []
+    for directory in [DEALS_DIR, LEGACY_DEALS_DIR]:
+        if os.path.exists(directory):
+            directories.append(directory)
+    return directories
 
 def calculate_warmth(last_contacted_date, priority, velocity=0):
     if not last_contacted_date: return 0, "cold", 999
@@ -150,8 +160,8 @@ def main():
                     if parent not in account_stats: account_stats[parent] = []
                     account_stats[parent].append(score)
 
-    # 2. Process Accounts and Deal-Flow
-    for directory in [ACCOUNTS_DIR, os.path.join(CRM_DATA_PATH, "Deal-Flow")]:
+    # 2. Process Accounts and Deals
+    for directory in [ACCOUNTS_DIR] + deal_directories():
         if not os.path.exists(directory): continue
         for f in os.listdir(directory):
             if f.endswith(".md"):
@@ -183,7 +193,7 @@ def main():
                 })
                 
                 if (stat == "cold" and fm.get('priority') in ['high', 'medium']) or vel >= 3:
-                    type_label = 'Account' if 'Accounts' in directory else 'Deal'
+                    type_label = 'Account' if directory == ACCOUNTS_DIR else 'Deal'
                     at_risk.append({'name': name, 'type': type_label, 'status': stat, 'velocity': vel, 'days': days, 'index': acc_index})
 
     # 3. Generate INTELLIGENCE.md

@@ -1,7 +1,7 @@
 # Skill: Sync Workspace
 
 ## Description
-Proactively scans Gmail and Google Calendar for interactions with contacts linked to active opportunities. Infers updates to opportunity stages, activity logs, and task statuses.
+Proactively scans Gmail and Google Calendar for interactions with contacts linked to active opportunities. It now runs as a real ingestion workflow that updates telemetry, stages discoveries, and either stages or creates activity records depending on mode.
 
 ## Usage
 `sync-workspace [--since "YYYY-MM-DD"] [--autonomous]`
@@ -22,33 +22,24 @@ Proactively scans Gmail and Google Calendar for interactions with contacts linke
     *   Retrieve email addresses for these contacts from the `CRM_DATA_PATH/Contacts/` directory.
 
 4.  **Search Workspace (Dual-Layer):**
-    *   **Gmail (Sync):** Search `after:[since_date] (from:email1 OR from:email2 ...)` to sync existing contacts.
-    *   **Gmail (Discovery):** Search `after:[since_date] is:unread` or broader `after:[since_date]` to find new interactions.
-    *   **Calendar:** List events `timeMin:[since_date]` involving the identified emails and new attendees.
+    *   **Gmail (Sync):** Search `after:[since_date] (from:email1 OR to:email1 ...)` to sync known active-opportunity contacts.
+    *   **Gmail (Discovery):** Review recent messages for unknown professional-looking senders.
+    *   **Calendar:** List upcoming/recent primary-calendar events since `timeMin:[since_date]`.
 
-5.  **AI Filtering & Discovery Pipeline:**
+5.  **Filtering & Discovery Pipeline:**
     *   **Domain Filtering:** For any new email address, check against `scripts/noise_domains.json`. Ignore if it's a generic, service, or common noise domain.
-    *   **Contextual AI Classification:** For candidates that pass domain filtering:
-        *   Fetch the last 3 messages from the thread (`gmail.get`).
-        *   **LLM Prompt:** "Analyze this email thread. Determine if the sender is a Professional Prospect (Startup Founder, VC, Corporate) or Noise (Marketing, Personal, Logistics). Provide a one-sentence rationale."
-        *   **Staging:** If classified as 'Professional', append to `CRM_DATA_PATH/staging/discovery.json`.
+    *   **Discovery Staging:** For candidates that pass filtering, append discovery candidates to `CRM_DATA_PATH/staging/discovery.json`.
 
 6.  **Inference Logic & Deduplication:**
-    *   **New Emails:** Propose a new `Activity` (type: email) and summarize the content.
-    *   **Calendar Events:** Propose a new `Activity` (type: meeting) and check if it resolves an existing `Task`.
-    *   **Stage Shifts:** If the email/meeting content suggests a milestone, propose updating the `Opportunity` stage.
-    *   **Deduplication:** Check `CRM_DATA_PATH/Activities/` for existing entries matching the date/contact before proposing.
+    *   **Known Gmail Messages:** In interactive mode, stage activity proposals in `CRM_DATA_PATH/staging/workspace_updates.json`. In autonomous mode, create `Activity` records directly for known active-opportunity contacts.
+    *   **Calendar Events:** Apply the same interactive/autonomous branching for matched attendees.
+    *   **Deduplication:** Skip items whose `source-ref` already exists on an `Activity`.
+    *   **Telemetry:** Update `CRM_DATA_PATH/staging/interactions.json` with `last_date` and rolling 7-day hit counts.
 
 7.  **Processing (Interactive Mode):**
-    *   For each proposed update, use `ask_user` to present the detail.
-    *   **User Actions:**
-        *   **Approve:** Execute the creation/update.
-        *   **Skip:** Do not apply the change.
-        *   **Edit:** User provides a "hint" (e.g., "Change the summary to...") which the agent applies before executing.
+    *   Use `CRM_DATA_PATH/staging/workspace_updates.json` as the review queue for proposed Gmail/Calendar activities.
+    *   Users can review staged proposals before they are turned into durable records.
 
 8.  **Finalization & Linking:**
-    *   Run relevant `create-*` skills for approved changes.
-    *   **Linking:** Connect action items in activities to new tasks via Wikilinks.
-    *   **Automatic Bookkeeping:**
-        *   Commit updates to the data repository: `cd $CRM_DATA_PATH && git add . && git commit -m "agent: synced workspace"`
-        *   Run `update-dashboard`.
+    *   Run `python3 .gemini/skills/sync-workspace/scripts/sync-workspace.py [--since YYYY-MM-DD] [--autonomous]`.
+    *   Follow with `update-dashboard` after approved or autonomous changes are applied.

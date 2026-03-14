@@ -1,10 +1,15 @@
 import os
 import re
+import subprocess
 from datetime import datetime, date, timedelta
 
 from frontmatter_utils import load_frontmatter_file, write_frontmatter_file
 
 def get_crm_data_path():
+    env_override = os.getenv("CRM_DATA_PATH")
+    if env_override:
+        return os.path.abspath(env_override)
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     logic_root = os.path.abspath(os.path.join(script_dir, "../"))
     env_path = os.path.join(logic_root, ".env")
@@ -30,8 +35,15 @@ WARM_PATHS_PATH = os.path.join(STAGING_DIR, "warm_paths.json")
 MATCHES_PATH = os.path.join(STAGING_DIR, "matches.json")
 INTERACTIONS_PATH = os.path.join(STAGING_DIR, "interactions.json")
 INTELLIGENCE_DASHBOARD = os.path.join(CRM_DATA_PATH, "INTELLIGENCE.md")
+RELATIONSHIP_MEMORY_SCRIPT = os.path.join(os.path.dirname(__file__), "relationship_memory.py")
 
 PRIORITY_THRESHOLDS = {'high': 14, 'medium': 30, 'low': 90, 'default': 30}
+
+
+def as_link_name(value):
+    if isinstance(value, list):
+        return ""
+    return str(value or "").replace("[[", "").replace("]]", "")
 
 def load_json(file_path, default=None):
     if default is None: default = []
@@ -130,8 +142,8 @@ def main():
                     at_risk.append({'name': name, 'type': 'Contact', 'status': stat, 'velocity': vel, 'days': days})
                 
                 # Aggregate for account or deal
-                acc_link = fm.get('account', '').replace('[[', '').replace(']]', '')
-                deal_link = fm.get('deal', '').replace('[[', '').replace(']]', '')
+                acc_link = as_link_name(fm.get('account', ''))
+                deal_link = as_link_name(fm.get('deal', ''))
                 parent = acc_link if acc_link else deal_link
                 
                 if parent:
@@ -210,6 +222,13 @@ def main():
     else: content += "No automated matches found.\n"
     
     with open(INTELLIGENCE_DASHBOARD, 'w', encoding='utf-8') as f: f.write(content)
+
+    if os.path.exists(RELATIONSHIP_MEMORY_SCRIPT):
+        try:
+            print("Generating relationship memory...")
+            subprocess.run(["python3", RELATIONSHIP_MEMORY_SCRIPT], check=True, env={**os.environ, "CRM_DATA_PATH": CRM_DATA_PATH})
+        except Exception as exc:
+            print(f"Warning: relationship memory generation failed: {exc}")
     print("Intelligence Engine run complete.")
 
 if __name__ == "__main__": main()

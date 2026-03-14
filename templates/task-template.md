@@ -1,14 +1,21 @@
 ---
+id: "{{task-id}}"
 task-name: "{{Task Name}}"
-status: todo
-priority: medium
+status: "{{todo | in-progress | blocked | done | canceled}}"
+priority: "{{high | medium | low}}"
+owner: "{{Owner}}"
 due-date: {{YYYY-MM-DD}}
 date-created: {{YYYY-MM-DD}}
 date-modified: {{YYYY-MM-DD}}
+primary-parent-type: "{{lead | contact | account | opportunity | deal}}"
+primary-parent: "[[{{Primary Parent}}]]"
 account: "[[{{Account}}]]"
 contact: "[[{{Contact}}]]"
 opportunity: "[[{{Opportunity}}]]"
+lead: "[[{{Lead}}]]"
 type: follow-up
+source: "{{manual | activity | inbox | gmail | calendar}}"
+source-ref: "{{Source Reference}}"
 email-link: {{email-link}}
 meeting-notes: {{meeting-notes}}
 ---

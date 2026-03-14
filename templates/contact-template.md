@@ -1,13 +1,17 @@
 ---
+id: "{{contact-id}}"
 full-name: "{{Full Name}}"
 nickname: "{{Nickname}}"
+owner: "{{Owner}}"
 account: "[[{{Account Link}}]]"
 deal: "[[{{Deal Link}}]]"
 linkedin: "{{LinkedIn URL}}"
 email: "{{Email Address}}"
 mobile: "{{Mobile Number}}"
-source: "{{network | conference | cold-outreach}}"
-status: "{{qualified | lead | contacted}}"
+source: "{{manual | lead-conversion | network | conference | cold-outreach}}"
+source-ref: "{{Source Reference}}"
+relationship-status: "{{active | dormant | archived}}"
+priority: "{{high | medium | low}}"
 warmth-score: 0
 warmth-status: "neutral"
 velocity-score: 0

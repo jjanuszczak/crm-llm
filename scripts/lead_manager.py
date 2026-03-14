@@ -271,17 +271,23 @@ def create_account_record(company_name, owner, source_lead):
 
     today = date.today().strftime("%Y-%m-%d")
     frontmatter = {
+        "id": slug,
         "company-name": company_name,
+        "owner": owner or "john",
         "type": "corporate",
         "headquarters": "",
         "industry": "",
+        "size": 0,
         "url": "",
         "priority": "medium",
+        "relationship-stage": "prospect",
         "stage": "prospect",
         "investment-mandate": [],
         "check-size": "",
         "funding-stage": "",
         "target-raise": 0,
+        "source": "lead-conversion",
+        "source-ref": source_lead,
         "warmth-score": 0,
         "warmth-status": "neutral",
         "velocity-score": 0,
@@ -305,17 +311,22 @@ def create_contact_record(person_name, account_name, lead_frontmatter):
 
     today = date.today().strftime("%Y-%m-%d")
     nickname = person_name.split()[0] if person_name else ""
+    lead_link = link_for("Leads", slugify(lead_frontmatter.get("lead-name", person_name)))
     frontmatter = {
+        "id": slug,
         "full-name": person_name,
         "nickname": nickname,
+        "owner": lead_frontmatter.get("owner", "john"),
         "account": link_for("Accounts", slugify(account_name)),
         "deal": "",
         "linkedin": lead_frontmatter.get("linkedin", ""),
         "email": lead_frontmatter.get("email", ""),
         "mobile": lead_frontmatter.get("phone", ""),
-        "source": lead_frontmatter.get("lead-source", "manual"),
-        "source-lead": link_for("Leads", slugify(lead_frontmatter.get("lead-name", person_name))),
-        "status": "qualified",
+        "source": "lead-conversion",
+        "source-ref": lead_link,
+        "source-lead": lead_link,
+        "relationship-status": "active",
+        "priority": lead_frontmatter.get("priority", "medium"),
         "warmth-score": 0,
         "warmth-status": "neutral",
         "velocity-score": 0,
@@ -329,30 +340,38 @@ def create_contact_record(person_name, account_name, lead_frontmatter):
     return file_path
 
 
-def create_opportunity_record(account_name, contact_name, source_lead, opportunity_name=None):
+def create_opportunity_record(account_name, contact_name, source_lead, owner="john", opportunity_name=None):
     account_slug = slugify(account_name)
     contact_slug = slugify(contact_name)
     year = next_year_string()
     computed_name = opportunity_name or f"{account_name} - Advisory - {year}"
-    file_path = os.path.join(OPPORTUNITIES_DIR, f"{slugify(computed_name)}.md")
+    opportunity_slug = slugify(computed_name)
+    file_path = os.path.join(OPPORTUNITIES_DIR, f"{opportunity_slug}.md")
     if os.path.exists(file_path):
         return file_path
 
     today = date.today().strftime("%Y-%m-%d")
     frontmatter = {
+        "id": opportunity_slug,
         "opportunity-name": computed_name,
+        "owner": owner,
         "date-created": today,
         "date-modified": today,
         "account": link_for("Accounts", account_slug),
         "deal": "",
         "primary-contact": link_for("Contacts", contact_slug),
         "source-lead": source_lead,
+        "opportunity-type": "advisory",
         "is-active": True,
         "stage": "discovery",
+        "commercial-value": 0,
         "deal-value": 0,
         "close-date": today,
         "probability": 10,
         "product-service": "Advisory",
+        "influencers": [],
+        "source": "lead-conversion",
+        "source-ref": source_lead,
         "lost-at-stage": "",
         "lost-reason": "",
         "lost-date": "",
@@ -467,7 +486,13 @@ def cmd_convert(args):
 
     account_path = create_account_record(company_name, frontmatter.get("owner", "john"), lead_link)
     contact_path = create_contact_record(person_name, company_name, frontmatter)
-    opportunity_path = create_opportunity_record(company_name, person_name, lead_link, args.opportunity_name)
+    opportunity_path = create_opportunity_record(
+        company_name,
+        person_name,
+        lead_link,
+        frontmatter.get("owner", "john"),
+        args.opportunity_name,
+    )
 
     account_link = link_for("Accounts", os.path.splitext(os.path.basename(account_path))[0])
     contact_link = link_for("Contacts", os.path.splitext(os.path.basename(contact_path))[0])

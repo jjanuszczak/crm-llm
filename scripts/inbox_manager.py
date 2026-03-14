@@ -171,18 +171,26 @@ def create_task_from_inbox(frontmatter, opportunity_name=""):
         return file_path
 
     today = date.today().strftime("%Y-%m-%d")
+    opportunity_link = link_for("Opportunities", slugify(opportunity_name)) if opportunity_name else ""
     content = (
         "---\n"
+        f'id: "{slugify(title)}"\n'
         f'task-name: "{title}"\n'
         "status: todo\n"
         "priority: medium\n"
+        f'owner: "{frontmatter.get("owner", "john")}"\n'
         f"due-date: {today}\n"
         f"date-created: {today}\n"
         f"date-modified: {today}\n"
+        f'primary-parent-type: "{"opportunity" if opportunity_link else "lead"}"\n'
+        f'primary-parent: "{opportunity_link or link_for("Leads", slugify(title))}"\n'
         'account: ""\n'
         'contact: ""\n'
-        f'opportunity: "{link_for("Opportunities", slugify(opportunity_name)) if opportunity_name else ""}"\n'
+        f'opportunity: "{opportunity_link}"\n'
+        f'lead: "{link_for("Leads", slugify(title)) if not opportunity_link else ""}"\n'
         "type: follow-up\n"
+        'source: "inbox"\n'
+        f'source-ref: "{frontmatter.get("id", "")}"\n'
         'email-link: ""\n'
         'meeting-notes: ""\n'
         "---\n\n"

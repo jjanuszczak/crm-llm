@@ -1,15 +1,21 @@
 ---
+id: "account-{{company-name}}"
 company-name: "String"
+owner: "{{Owner}}"
 type: "investor" | "startup" | "corporate"
 headquarters: "String"
 industry: "String"
+size: 0
 url: "URL"
 priority: "high" | "medium" | "low"
+relationship-stage: "prospect" | "engaged" | "customer" | "churned"
 stage: "prospect" | "engaged" | "customer" | "churned"
 investment-mandate: []
 check-size: "String"
 funding-stage: "String"
 target-raise: 0
+source: "{{manual | lead-conversion | referral | workspace-discovery}}"
+source-ref: "{{Source Reference}}"
 warmth-score: 0
 warmth-status: "neutral"
 velocity-score: 0

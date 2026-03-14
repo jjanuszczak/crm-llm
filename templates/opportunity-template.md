@@ -1,16 +1,24 @@
 ---
+id: "{{opportunity-id}}"
 opportunity-name: {{Account}} - {{Product/Service}} - {{YYYY}}
+owner: "{{Owner}}"
 date-created: {{YYYY-MM-DD}}
 date-modified: {{YYYY-MM-DD}}
 account: "[[{{Account}}]]"
 deal: "[[{{Deal Name}}]]"
 primary-contact: "[[{{Contact Name}}]]"
+source-lead: "[[{{Source Lead}}]]"
+opportunity-type: "{{advisory | consulting | financing | hiring | partnership | other}}"
 is-active: true
 stage: discovery
+commercial-value: 0
 deal-value: 0
 close-date: {{YYYY-MM-DD}}
 probability: 10
 product-service: {{Product or Service Name}}
+influencers: []
+source: "{{manual | lead-conversion | referral | workspace-discovery}}"
+source-ref: "{{Source Reference}}"
 lost-at-stage: 
 lost-reason: 
 lost-date: 

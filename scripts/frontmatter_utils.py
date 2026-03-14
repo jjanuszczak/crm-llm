@@ -106,6 +106,8 @@ def _normalize_mapping(data):
             normalized[key] = [_normalize_scalar(item, key) for item in value]
         else:
             normalized[key] = _normalize_scalar(value, key)
+    if "full-name" not in normalized and "full--name" in normalized:
+        normalized["full-name"] = normalized["full--name"]
     return normalized
 
 

@@ -1,10 +1,10 @@
 # Skill: Create Activity
 
 ## Description
-Creates a new activity file in the `CRM_DATA_PATH/Activities/` directory. This skill automates the tracking of interactions (calls, emails, meetings, etc.) and ensures they are correctly linked to contacts and opportunities using the `templates/activity-template.md`.
+Creates a first-class activity file in the `CRM_DATA_PATH/Activities/` directory using the v4 activity model. Activities track real events and interactions and must use one primary parent plus optional secondary links.
 
 ## Usage
-`create-activity --type "call|email|meeting|analysis|note" --contact "Contact Name" --opportunity "Opportunity Name" --date "YYYY-MM-DD" --email-link "URL" --meeting-notes "URL"`
+`create-activity --title "Initial email with Jane Doe" --activity-type email --primary-parent-type opportunity --primary-parent "Opportunities/Example-Capital-Advisory-2026" --secondary-links "Contacts/Jane-Doe" "Accounts/Example-Capital" --date "YYYY-MM-DD"`
 
 ## Implementation Steps
 
@@ -13,16 +13,21 @@ Creates a new activity file in the `CRM_DATA_PATH/Activities/` directory. This s
     *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
 2.  **File Naming:**
-    *   Construct the name as `[YYYY-MM-DD] - [type] - [Contact Name].md`.
-    *   Example: `2026-02-19 - email - Ghazal Al Sakaal.md`.
+    *   Construct the name from a slugified activity title.
     *   Verify the file does not already exist in the `CRM_DATA_PATH/Activities/` directory.
 
 3.  **Template Population:**
     *   Load `templates/activity-template.md`.
-    *   Replace placeholders (`{{activity-date}}`, `{{type}}`, etc.) with provided arguments.
+    *   Replace placeholders with provided arguments.
+    *   Require:
+        * `activity-name`
+        * `activity-type`
+        * `primary-parent-type`
+        * `primary-parent`
+    *   Allow optional `secondary-links`.
     *   **Email Link:** If `--email-link` is provided, populate the `email-link` field in the frontmatter.
     *   **Meeting Notes:** If `--meeting-notes` is provided, populate the `meeting-notes` field in the frontmatter.
-    *   Wikilink the `contacts` (as an array) and the `opportunity` correctly.
+    *   Set `date-created` and `date-modified`.
 
 4.  **Content Capture:**
     *   **Outcomes:** Summarize the key results of the activity.

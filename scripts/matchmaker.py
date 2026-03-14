@@ -1,6 +1,7 @@
 import os
-import re
 import json
+
+from frontmatter_utils import load_frontmatter_file
 
 def get_crm_data_path():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,21 +20,15 @@ DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deal-Flow")
 ACCOUNTS_DIR = os.path.join(CRM_DATA_PATH, "Accounts")
 MATCHES_PATH = os.path.join(CRM_DATA_PATH, "staging/matches.json")
 
-def parse_frontmatter(content):
-    match = re.match(r'---\s*\n(.*?)\n---\s*', content, re.DOTALL)
-    if not match: return {}
-    data = {}
-    for line in match.group(1).split('\n'):
-        if ':' in line:
-            k, v = line.split(':', 1)
-            data[k.strip()] = v.strip().strip('"').strip("'")
-    return data
-
 def calculate_match(deal, account):
     score = 0
     # 1. Sector Match
     d_sector = deal.get('sector', '').lower()
-    a_mandate = account.get('investment-mandate', '').lower()
+    mandate = account.get('investment-mandate', [])
+    if isinstance(mandate, list):
+        a_mandate = " ".join(str(item).lower() for item in mandate)
+    else:
+        a_mandate = str(mandate).lower()
     if d_sector and d_sector in a_mandate:
         score += 50
     
@@ -58,18 +53,17 @@ def main():
     if os.path.exists(DEALS_DIR):
         for f in os.listdir(DEALS_DIR):
             if f.endswith(".md"):
-                with open(os.path.join(DEALS_DIR, f), 'r', encoding='utf-8', errors='ignore') as rf:
-                    fm = parse_frontmatter(rf.read())
-                    if fm: deals.append({'name': f[:-3], 'fm': fm})
+                fm, _ = load_frontmatter_file(os.path.join(DEALS_DIR, f))
+                if fm:
+                    deals.append({'name': f[:-3], 'fm': fm})
 
     accounts = []
     if os.path.exists(ACCOUNTS_DIR):
         for f in os.listdir(ACCOUNTS_DIR):
             if f.endswith(".md"):
-                with open(os.path.join(ACCOUNTS_DIR, f), 'r', encoding='utf-8', errors='ignore') as rf:
-                    fm = parse_frontmatter(rf.read())
-                    if fm and fm.get('type') == 'investor':
-                        accounts.append({'name': f[:-3], 'fm': fm})
+                fm, _ = load_frontmatter_file(os.path.join(ACCOUNTS_DIR, f))
+                if fm and fm.get('type') == 'investor':
+                    accounts.append({'name': f[:-3], 'fm': fm})
 
     all_matches = []
     for d in deals:

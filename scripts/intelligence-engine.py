@@ -2,6 +2,8 @@ import os
 import re
 from datetime import datetime, date, timedelta
 
+from frontmatter_utils import load_frontmatter_file, write_frontmatter_file
+
 def get_crm_data_path():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     logic_root = os.path.abspath(os.path.join(script_dir, "../"))
@@ -40,34 +42,13 @@ def load_json(file_path, default=None):
         except: return default
     return default
 
-def parse_frontmatter(content):
-    match = re.match(r'---\s*\n(.*?)\n---\s*', content, re.DOTALL)
-    if not match: return None, content
-    frontmatter_str = match.group(1)
-    body = content[match.end():]
-    data = {}
-    for line in frontmatter_str.split('\n'):
-        if ':' in line:
-            key, value = line.split(':', 1)
-            data[key.strip()] = value.strip().strip('"').strip("'")
-    return data, body
-
 def update_frontmatter(file_path, new_data):
     try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: content = f.read()
-    except: return
-    fm, body = parse_frontmatter(content)
-    if fm is None: return
+        fm, body = load_frontmatter_file(file_path)
+    except:
+        return
     fm.update(new_data)
-    fm_lines = ["---"]
-    for k, v in fm.items():
-        # If the value is a wikilink (contains [[), ensure it is quoted
-        val = str(v)
-        if "[[" in val and not (val.startswith('"') or val.startswith("'")):
-            val = f'"{val}"'
-        fm_lines.append(f"{k}: {val}")
-    fm_lines.append("---\n")
-    with open(file_path, 'w', encoding='utf-8') as f: f.write("\n".join(fm_lines) + body)
+    write_frontmatter_file(file_path, fm, body)
 
 def get_latest_interaction_date(entity_name, entity_email, activities_data, interactions_cache):
     latest_date = date(2000, 1, 1)
@@ -113,9 +94,9 @@ def main():
         for f in os.listdir(ACTIVITIES_DIR):
             if f.endswith(".md"):
                 try:
-                    with open(os.path.join(ACTIVITIES_DIR, f), 'r', encoding='utf-8', errors='ignore') as rf:
-                        fm, _ = parse_frontmatter(rf.read())
-                        if fm: activities_data.append({'frontmatter': fm})
+                    fm, _ = load_frontmatter_file(os.path.join(ACTIVITIES_DIR, f))
+                    if fm:
+                        activities_data.append({'frontmatter': fm})
                 except: pass
 
     interactions_cache = load_json(INTERACTIONS_PATH, default={})
@@ -130,9 +111,9 @@ def main():
                 path = os.path.join(CONTACTS_DIR, f)
                 name = f[:-3]
                 try:
-                    with open(path, 'r', encoding='utf-8', errors='ignore') as rf:
-                        fm, _ = parse_frontmatter(rf.read())
-                        if not fm: continue
+                    fm, _ = load_frontmatter_file(path)
+                    if not fm:
+                        continue
                 except: continue
                 
                 last_date = get_latest_interaction_date(name, fm.get('email'), activities_data, interactions_cache)
@@ -165,9 +146,9 @@ def main():
                 path = os.path.join(directory, f)
                 name = f[:-3]
                 try:
-                    with open(path, 'r', encoding='utf-8', errors='ignore') as rf:
-                        fm, _ = parse_frontmatter(rf.read())
-                        if not fm: continue
+                    fm, _ = load_frontmatter_file(path)
+                    if not fm:
+                        continue
                 except: continue
                 
                 last_date = get_latest_interaction_date(name, fm.get('email'), activities_data, interactions_cache)

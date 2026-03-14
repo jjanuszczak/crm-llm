@@ -1,13 +1,23 @@
 ---
-activity-date: {{YYYY-MM-DD}}
-type: {{call | email | meeting | analysis | note}}
-contacts: ["[[{{Contact Name}}]]"]
-opportunity: "[[{{Opportunity Name}}]]"
-email-link: {{email-link}}
-meeting-notes: {{meeting-notes}}
+id: "{{activity-id}}"
+activity-name: "{{Activity Name}}"
+activity-type: "{{call | email | meeting | analysis | note-derived}}"
+status: "completed"
+owner: "{{Owner}}"
+date: "{{YYYY-MM-DD}}"
+primary-parent-type: "{{opportunity | contact | account | lead | deal}}"
+primary-parent: "[[{{Primary Parent}}]]"
+secondary-links:
+  - "[[{{Secondary Link 1}}]]"
+source: "{{manual | gmail | calendar | inbox}}"
+source-ref: "{{Source Reference}}"
+email-link: "{{email-link}}"
+meeting-notes: "{{meeting-notes}}"
+date-created: "{{YYYY-MM-DD}}"
+date-modified: "{{YYYY-MM-DD}}"
 ---
 
-# **Activity: {{type}} - {{activity-date}}**
+# **Activity: {{activity-name}}**
 
 ## **Executive Summary / Objective**
 {{A brief (1-2 sentence) description of the purpose of this activity.}}

@@ -23,7 +23,7 @@ Creates a new contact file in the `CRM_DATA_PATH/Contacts/` directory for a spec
 
 4.  **Content Generation (Using `templates/contact-template.md`):**
     *   **Frontmatter:**
-        *   `full--name`: The contact's full name.
+        *   `full-name`: The contact's full name.
         *   `nickname`: The contact's first name or preferred nickname.
         *   `account`: `[[Company Name]]` (if provided).
         *   `linkedin`: The provided LinkedIn URL.

@@ -42,6 +42,7 @@ The agent can perform the following automated workflows:
 | **Manage Intel** | `manage-intelligence`| Approve/Ignore new discoveries and trigger LinkedIn mapping. |
 | **Workspace Sync**| `sync-workspace` | Scans Gmail/Calendar for updates. Supports **Autonomous** and **Interactive** modes. |
 | **Matchmaker** | `matchmaker` | Autonomously suggests matches between **Deals** (inventory) and **Accounts** (investors). |
+| **Lead Flow** | `create-lead` | Creates and manages first-class leads before conversion into permanent CRM records. |
 | **Account DD** | `create-account` | Researches a company and generates a comprehensive DD report. |
 | **Contact Bio** | `create-contact` | Researches professional bios and engagement hooks. |
 | **Deal Flow** | `create-deal` | Captures startup inventory and maps LinkedIn "Warm Paths". |

@@ -14,8 +14,8 @@ def init_vault(name):
     
     # 1. Create Folders
     folders = [
-        "Accounts", "Contacts", "Opportunities", "Deals", 
-        "Activities", "Tasks", "Reports", ".obsidian"
+        "Accounts", "Contacts", "Leads", "Opportunities", "Deals",
+        "Activities", "Notes", "Inbox", "Tasks", "Reports", ".obsidian"
     ]
     for folder in folders:
         os.makedirs(os.path.join(vault_path, folder), exist_ok=True)

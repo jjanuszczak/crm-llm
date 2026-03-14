@@ -1,5 +1,38 @@
 .env
 .DS_Store
 
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python packaging / build artifacts
+.Python
+build/
+dist/
+site/
+.eggs/
+*.egg
+*.egg-info/
+pip-wheel-metadata/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
 # Ignore the entire nested data directory
 crm-data/

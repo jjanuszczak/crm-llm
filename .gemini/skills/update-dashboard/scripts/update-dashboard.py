@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 from datetime import datetime, timedelta, date
 
 # --- Path Loading ---
@@ -28,6 +29,11 @@ DASHBOARD_PATH = os.path.join(PROJECT_ROOT, "DASHBOARD.md")
 OPPORTUNITIES_DIR = os.path.join(PROJECT_ROOT, "Opportunities")
 TASKS_DIR = os.path.join(PROJECT_ROOT, "Tasks")
 ACTIVITIES_DIR = os.path.join(PROJECT_ROOT, "Activities")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGIC_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../../../../"))
+sys.path.insert(0, os.path.join(LOGIC_ROOT, "scripts"))
+
+from frontmatter_utils import parse_markdown_frontmatter
 
 # --- Helper Functions ---
 
@@ -41,42 +47,18 @@ def parse_frontmatter(content):
     if not match:
         return {}
     
-    frontmatter_str = match.group(1)
-    data = {}
-    for line in frontmatter_str.split('\n'):
-        if ':' in line:
-            key, value = line.split(':', 1)
-            key = key.strip()
-            original_value = value.strip().strip('"').strip("'") 
+    parsed, _ = parse_markdown_frontmatter(content)
+    return parsed
 
-            # Handle known list fields first, if any
-            # For this CRM, only 'investment-mandate' is a list. All others are single values.
-            if key == 'investment-mandate':
-                if original_value.startswith('[') and original_value.endswith(']'):
-                    data[key] = [item.strip() for item in original_value[1:-1].split(',') if item.strip()]
-                else:
-                    data[key] = [original_value] if original_value else [] # Ensure it's always a list
-            # Try to parse dates for known date keys
-            elif key in ['date-created', 'date-modified', 'date', 'due-date', 'close-date']:
-                if re.match(r'\d{4}-\d{2}-\d{2}', original_value):
-                    try:
-                        data[key] = datetime.strptime(original_value, '%Y-%m-%d').date()
-                    except ValueError:
-                        data[key] = None 
-                else:
-                    data[key] = None 
-            # Handle booleans
-            elif original_value.lower() == 'true':
-                data[key] = True
-            elif original_value.lower() == 'false':
-                data[key] = False
-            # Handle integers
-            elif original_value.isdigit():
-                data[key] = int(original_value)
-            # Default to string for all other cases, including wikilinks
-            else:
-                data[key] = original_value
-    return data
+
+def _coerce_int(value, default=0):
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        match = re.search(r'-?\d+', value)
+        if match:
+            return int(match.group(0))
+    return default
 
 def get_files_with_frontmatter(directory):
     """
@@ -143,10 +125,9 @@ def aggregate_opportunities(opportunities_data):
     sorted_opps = sorted(
         active_opportunities,
         key=lambda x: (
-            x['frontmatter'].get('probability', 0), 
+            -_coerce_int(x['frontmatter'].get('probability', 0)),
             x['frontmatter'].get('close-date') if x['frontmatter'].get('close-date') is not None else FAR_FUTURE_DATE
         ),
-        reverse=True # Sort probability desc
     )
     
     # Separate into Engaged and Pipeline
@@ -199,36 +180,101 @@ def aggregate_tasks(tasks_data):
     separator = "| :--- | :--- | :--- | :--- | :--- |\n"
     return header + separator + "\n".join(table_rows)
 
-def synthesize_insights(activities_data):
-    """
-    Synthesizes strategic insights from recent activities.
-    """
-    seven_days_ago = datetime.now().date() - timedelta(days=7)
+def synthesize_insights(activities_data, opportunities_data, tasks_data):
+    """Synthesizes dashboard insights from current CRM data."""
+    today = datetime.now().date()
+    seven_days_ago = today - timedelta(days=7)
+    fourteen_days_out = today + timedelta(days=14)
+
     recent_activities = [
-        a for a in activities_data 
+        a for a in activities_data
         if isinstance(a['frontmatter'].get('date'), date) and a['frontmatter']['date'] >= seven_days_ago
     ]
-
-    insights = [
-        "Example Bank Opportunity is Hot: Ghazal's team is actively looking at the Philippines corridor and is already speaking with other partners. The recent email exchange indicates high urgency and a need to move quickly.",
-        "Example Fintech Pre-Series A in Play: The Example Fintech opportunity is moving forward with updated investment materials.",
-        "ZingHR GTM Formalized: My role as Strategic Advisor Partner for ZingHR's entry into the Philippines banking vertical is confirmed, with clear next steps.",
-        "Example Mobility Deal Flow: Initial review of Example Mobility materials is pending, with follow-up required with Bianca.",
-        "iCLA Course Proposals: Follow-up needed with Sanjay if no feedback is received soon.",
-        "Hello Clever Acquisition & Series A: Both opportunities are active, with follow-ups required for the Brick term sheet and Bob Seltzer for the Series A.",
-        "Unpaid Fees: I need to collect outstanding advisory fees from 1882 Energy Ventures."
+    overdue_tasks = [
+        t for t in tasks_data
+        if t['frontmatter'].get('status') in ['todo', 'in-progress']
+        and isinstance(t['frontmatter'].get('due-date'), date)
+        and t['frontmatter']['due-date'] < today
+    ]
+    due_soon_tasks = [
+        t for t in tasks_data
+        if t['frontmatter'].get('status') in ['todo', 'in-progress']
+        and isinstance(t['frontmatter'].get('due-date'), date)
+        and today <= t['frontmatter']['due-date'] <= today + timedelta(days=7)
+    ]
+    high_confidence_opps = [
+        o for o in opportunities_data
+        if o['frontmatter'].get('is-active', False)
+        and _coerce_int(o['frontmatter'].get('probability', 0)) >= 70
+    ]
+    closing_soon_opps = [
+        o for o in opportunities_data
+        if o['frontmatter'].get('is-active', False)
+        and isinstance(o['frontmatter'].get('close-date'), date)
+        and o['frontmatter']['close-date'] <= fourteen_days_out
     ]
 
-    if not recent_activities and not insights:
-        return "No new strategic insights identified from recent activities."
-    elif not recent_activities:
-        return "Generated insights (from last analysis):\n" + "\n".join(f"*   {i}" for i in insights)
-    else:
-        activity_summaries = [f"Found activity '{os.path.basename(a['file_path'])}' on {a['frontmatter'].get('date').strftime('%Y-%m-%d')}." for a in recent_activities]
-        return "Recent activities indicate potential developments. (Dynamic insight generation to be implemented).\n\n" + \
-               "Details of recent activities:\n" + "\n".join(f"*   {s}" for s in activity_summaries) + "\n\n" + \
-               "Current insights (from last analysis):\n" + \
-               "\n".join(f"*   {i}" for i in insights)
+    insights = []
+
+    if recent_activities:
+        latest = sorted(
+            recent_activities,
+            key=lambda a: a['frontmatter'].get('date'),
+            reverse=True,
+        )[:3]
+        latest_names = ", ".join(os.path.splitext(os.path.basename(item['file_path']))[0] for item in latest)
+        insights.append(
+            f"Recent activity volume is {len(recent_activities)} item(s) in the last 7 days; latest updates: {latest_names}."
+        )
+
+    if high_confidence_opps:
+        ranked = sorted(
+            high_confidence_opps,
+            key=lambda o: (
+                -_coerce_int(o['frontmatter'].get('probability', 0)),
+                o['frontmatter'].get('close-date') or date.max,
+            ),
+        )[:3]
+        summary = ", ".join(
+            f"{item['frontmatter'].get('opportunity-name', os.path.splitext(os.path.basename(item['file_path']))[0])} "
+            f"({item['frontmatter'].get('probability', 0)}%)"
+            for item in ranked
+        )
+        insights.append(f"Highest-conviction opportunities: {summary}.")
+
+    if closing_soon_opps:
+        ranked = sorted(
+            closing_soon_opps,
+            key=lambda o: o['frontmatter'].get('close-date') or date.max,
+        )[:3]
+        summary = ", ".join(
+            f"{item['frontmatter'].get('opportunity-name', os.path.splitext(os.path.basename(item['file_path']))[0])} "
+            f"(target close {item['frontmatter'].get('close-date')})"
+            for item in ranked
+        )
+        insights.append(f"Near-term closing window: {summary}.")
+
+    if overdue_tasks:
+        ranked = sorted(overdue_tasks, key=lambda t: t['frontmatter'].get('due-date'))[:3]
+        summary = ", ".join(
+            f"{item['frontmatter'].get('task-name', os.path.splitext(os.path.basename(item['file_path']))[0])} "
+            f"(due {item['frontmatter'].get('due-date')})"
+            for item in ranked
+        )
+        insights.append(f"Execution risk from overdue tasks: {summary}.")
+    elif due_soon_tasks:
+        ranked = sorted(due_soon_tasks, key=lambda t: t['frontmatter'].get('due-date'))[:3]
+        summary = ", ".join(
+            f"{item['frontmatter'].get('task-name', os.path.splitext(os.path.basename(item['file_path']))[0])} "
+            f"(due {item['frontmatter'].get('due-date')})"
+            for item in ranked
+        )
+        insights.append(f"Next 7-day task focus: {summary}.")
+
+    if not insights:
+        return "No new strategic insights identified from recent activities, opportunities, or tasks."
+
+    return "\n".join(f"* {insight}" for insight in insights)
 
 
 def generate_dashboard_content(engaged_table, pipeline_table, tasks_table, insights_text):
@@ -259,7 +305,7 @@ def main():
 
     # 3. Synthesize Insights
     activities_data = get_files_with_frontmatter(ACTIVITIES_DIR)
-    insights_text = synthesize_insights(activities_data)
+    insights_text = synthesize_insights(activities_data, opportunities_data, tasks_data)
 
     # 4. Generate and write Dashboard content
     dashboard_content = generate_dashboard_content(engaged_table, pipeline_table, tasks_table, insights_text)

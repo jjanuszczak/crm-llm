@@ -64,7 +64,8 @@ def save_json(path, payload):
 
 def run_gws(args):
     if FIXTURE_DIR:
-        fixture_path = os.path.join(FIXTURE_DIR, args[1].replace(".", "_") + ".json")
+        command_key = "_".join(arg.replace(".", "_") for arg in args[1:] if not arg.startswith("--"))
+        fixture_path = os.path.join(FIXTURE_DIR, command_key + ".json")
         if os.path.exists(fixture_path):
             return load_json(fixture_path, {})
 
@@ -195,7 +196,10 @@ def gmail_messages(query):
     response = run_gws(
         [
             "gws",
-            "gmail.users.messages.list",
+            "gmail",
+            "users",
+            "messages",
+            "list",
             "--params",
             json.dumps({"userId": "me", "q": query, "maxResults": 25}),
         ]
@@ -207,23 +211,29 @@ def gmail_message_detail(message_id):
     return run_gws(
         [
             "gws",
-            "gmail.users.messages.get",
+            "gmail",
+            "users",
+            "messages",
+            "get",
             "--params",
             json.dumps({"userId": "me", "id": message_id, "format": "full"}),
         ]
     )
 
 
-def list_calendar_events(since_iso):
+def list_calendar_events(since_iso, until_iso):
     response = run_gws(
         [
             "gws",
-            "calendar.events.list",
+            "calendar",
+            "events",
+            "list",
             "--params",
             json.dumps(
                 {
                     "calendarId": "primary",
                     "timeMin": since_iso,
+                    "timeMax": until_iso,
                     "singleEvents": True,
                     "orderBy": "startTime",
                     "maxResults": 25,
@@ -268,13 +278,15 @@ def create_activity_file(
     source_ref,
     summary,
 ):
-    file_path = os.path.join(ACTIVITIES_DIR, f"{slugify(title)}.md")
+    ref_slug = slugify(str(source_ref))[:16]
+    record_id = f"{slugify(title)}-{ref_slug}" if ref_slug else slugify(title)
+    file_path = os.path.join(ACTIVITIES_DIR, f"{record_id}.md")
     if os.path.exists(file_path):
         return file_path
 
     content = (
         "---\n"
-        f'id: "{slugify(title)}"\n'
+        f'id: "{record_id}"\n'
         f'activity-name: "{title}"\n'
         f'activity-type: "{activity_type}"\n'
         'status: "completed"\n'
@@ -360,9 +372,9 @@ def process_gmail(active_emails, contacts, since_str, autonomous, interactions, 
         stage_discovery(discoveries, load_json(DISCOVERY_PATH, []), email, name, rationale, source_ref)
 
 
-def process_calendar(active_emails, contacts, since_iso, autonomous, interactions, proposals, discoveries, existing_refs):
+def process_calendar(active_emails, contacts, since_iso, until_iso, autonomous, interactions, proposals, discoveries, existing_refs):
     domains, noise_prefixes = load_noise_domains()
-    for event in list_calendar_events(since_iso):
+    for event in list_calendar_events(since_iso, until_iso):
         source_ref = event.get("id")
         if source_ref in existing_refs:
             continue
@@ -439,8 +451,9 @@ def main():
     existing_refs = existing_activity_refs()
 
     since_iso = f"{args.since}T00:00:00Z"
+    until_iso = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     process_gmail(active_emails, contacts, args.since, args.autonomous, interactions, proposals, discoveries, existing_refs)
-    process_calendar(active_emails, contacts, since_iso, args.autonomous, interactions, proposals, discoveries, existing_refs)
+    process_calendar(active_emails, contacts, since_iso, until_iso, args.autonomous, interactions, proposals, discoveries, existing_refs)
 
     if discoveries:
         existing = load_json(DISCOVERY_PATH, [])

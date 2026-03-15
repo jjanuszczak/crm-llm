@@ -1,4 +1,6 @@
 import argparse
+import base64
+import html
 import json
 import os
 import re
@@ -12,7 +14,7 @@ SCRIPTS_DIR = os.path.join(LOGIC_ROOT, "scripts")
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
-from frontmatter_utils import load_frontmatter_file
+from frontmatter_utils import dated_record_id, load_frontmatter_file
 
 
 def get_crm_data_path():
@@ -38,6 +40,7 @@ STAGING_DIR = os.path.join(CRM_DATA_PATH, "staging")
 DISCOVERY_PATH = os.path.join(STAGING_DIR, "discovery.json")
 WORKSPACE_UPDATES_PATH = os.path.join(STAGING_DIR, "workspace_updates.json")
 INTERACTIONS_PATH = os.path.join(STAGING_DIR, "interactions.json")
+SYNC_STATE_PATH = os.path.join(STAGING_DIR, "workspace_sync_state.json")
 NOISE_DOMAINS_PATH = os.path.join(SCRIPTS_DIR, "noise_domains.json")
 FIXTURE_DIR = os.getenv("GWS_FIXTURE_DIR")
 
@@ -60,6 +63,26 @@ def load_json(path, default):
 def save_json(path, payload):
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
+
+
+def load_sync_state():
+    return load_json(
+        SYNC_STATE_PATH,
+        {
+            "gmail_last_sync_at": "",
+            "calendar_last_sync_at": "",
+        },
+    )
+
+
+def save_sync_state(gmail_until_iso, calendar_until_iso):
+    save_json(
+        SYNC_STATE_PATH,
+        {
+            "gmail_last_sync_at": gmail_until_iso,
+            "calendar_last_sync_at": calendar_until_iso,
+        },
+    )
 
 
 def run_gws(args):
@@ -93,6 +116,97 @@ def extract_headers(message):
     for header in payload.get("headers", []):
         headers[header.get("name", "")] = header.get("value", "")
     return headers
+
+
+def extract_message_text(payload):
+    plain_text = _extract_payload_part(payload, "text/plain")
+    if plain_text:
+        return plain_text
+    html_text = _extract_payload_part(payload, "text/html")
+    if html_text:
+        return _strip_html(html_text)
+    return ""
+
+
+def _extract_payload_part(payload, mime_type):
+    if not isinstance(payload, dict):
+        return ""
+    if payload.get("mimeType") == mime_type and payload.get("body", {}).get("data"):
+        return _decode_gmail_body(payload["body"]["data"])
+    for part in payload.get("parts", []):
+        extracted = _extract_payload_part(part, mime_type)
+        if extracted:
+            return extracted
+    return ""
+
+
+def _decode_gmail_body(data):
+    try:
+        padded = data + "=" * (-len(data) % 4)
+        return base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _strip_html(value):
+    without_tags = re.sub(r"<br\s*/?>", "\n", value, flags=re.IGNORECASE)
+    without_tags = re.sub(r"</p\s*>", "\n\n", without_tags, flags=re.IGNORECASE)
+    without_tags = re.sub(r"<[^>]+>", "", without_tags)
+    return html.unescape(without_tags)
+
+
+def summarize_gmail_message(headers, detail):
+    subject = headers.get("Subject", "(no subject)")
+    sender = parse_display_name(headers.get("From", ""))
+    body_text = extract_message_text(detail.get("payload", {}))
+    cleaned = normalize_message_text(body_text or detail.get("snippet", ""))
+    summary_line = first_meaningful_line(cleaned)
+    if summary_line:
+        return f"{sender or 'Sender'} emailed about {subject}: {summary_line}"
+    return f"{sender or 'Sender'} emailed about {subject}."
+
+
+def summarize_calendar_event(event):
+    summary = event.get("summary", "(untitled event)")
+    location = (event.get("location") or "").strip()
+    description = normalize_message_text(event.get("description", ""))
+    first_line = first_meaningful_line(description)
+    attendee_names = [
+        attendee.get("displayName") or parse_display_name(attendee.get("email", ""))
+        for attendee in event.get("attendees", [])
+        if attendee.get("email")
+    ]
+    attendee_names = [name for name in attendee_names if name]
+    parts = [f"Calendar meeting: {summary}."]
+    if attendee_names:
+        parts.append(f"Attendees included {', '.join(attendee_names[:4])}.")
+    if location:
+        parts.append(f"Location: {location}.")
+    if first_line:
+        parts.append(f"Context: {first_line}")
+    return " ".join(parts)
+
+
+def normalize_message_text(text):
+    lines = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith(">") or line.startswith("From:") or line.startswith("Sent:") or line.startswith("Subject:"):
+            continue
+        if re.match(r"^On .+wrote:$", line):
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def first_meaningful_line(text):
+    for line in text.splitlines():
+        cleaned = re.sub(r"\s+", " ", line).strip()
+        if len(cleaned) >= 20:
+            return cleaned
+    return ""
 
 
 def parse_email_addresses(value):
@@ -185,11 +299,12 @@ def load_noise_domains():
     return domains, prefixes
 
 
-def build_gmail_query(since_str, emails):
+def build_gmail_query(since_epoch, emails):
+    after_term = f"after:{since_epoch}"
     if emails:
         email_terms = " OR ".join(f"(from:{email} OR to:{email})" for email in emails)
-        return f"after:{since_str.replace('-', '/')} ({email_terms})"
-    return f"after:{since_str.replace('-', '/')} is:unread"
+        return f"{after_term} ({email_terms})"
+    return f"{after_term} is:unread"
 
 
 def gmail_messages(query):
@@ -279,7 +394,8 @@ def create_activity_file(
     summary,
 ):
     ref_slug = slugify(str(source_ref))[:16]
-    record_id = f"{slugify(title)}-{ref_slug}" if ref_slug else slugify(title)
+    unique_title = f"{title} {ref_slug}" if ref_slug else title
+    record_id = dated_record_id(event_date, unique_title)
     file_path = os.path.join(ACTIVITIES_DIR, f"{record_id}.md")
     if os.path.exists(file_path):
         return file_path
@@ -313,9 +429,9 @@ def create_activity_file(
     return file_path
 
 
-def process_gmail(active_emails, contacts, since_str, autonomous, interactions, proposals, discoveries, existing_refs):
+def process_gmail(active_emails, contacts, since_date, since_epoch, autonomous, interactions, proposals, discoveries, existing_refs):
     domains, noise_prefixes = load_noise_domains()
-    query = build_gmail_query(since_str, list(active_emails.keys()))
+    query = build_gmail_query(since_epoch, list(active_emails.keys()))
     messages = gmail_messages(query)
 
     for item in messages:
@@ -335,7 +451,7 @@ def process_gmail(active_emails, contacts, since_str, autonomous, interactions, 
 
         if email in active_emails:
             parent = active_emails[email]
-            summary = f"Gmail message synced: {subject}"
+            summary = summarize_gmail_message(headers, detail)
             if autonomous:
                 path = create_activity_file(
                     title=f"Gmail - {subject}",
@@ -368,7 +484,7 @@ def process_gmail(active_emails, contacts, since_str, autonomous, interactions, 
         local_part = email.split("@", 1)[0]
         if domain in domains or any(token in local_part for token in noise_prefixes):
             continue
-        rationale = f"Professional-looking inbound email after {since_str}: {subject}"
+        rationale = f"Professional-looking inbound email after {since_date}: {subject}"
         stage_discovery(discoveries, load_json(DISCOVERY_PATH, []), email, name, rationale, source_ref)
 
 
@@ -421,7 +537,7 @@ def process_calendar(active_emails, contacts, since_iso, until_iso, autonomous, 
                     secondary_links=matched_links,
                     source="calendar",
                     source_ref=source_ref,
-                    summary=f"Calendar event synced: {summary}",
+                    summary=summarize_calendar_event(event),
                 )
                 proposals.append({"type": "activity_created", "path": path, "source_ref": source_ref})
             else:
@@ -433,12 +549,32 @@ def process_calendar(active_emails, contacts, since_iso, until_iso, autonomous, 
                         "summary": summary,
                         "opportunity": matched_parent["opportunity"],
                     }
-                )
+                    )
+
+
+def resolve_sync_window(since_override, sync_state):
+    if since_override:
+        base_dt = datetime.fromisoformat(f"{since_override}T00:00:00+00:00")
+    else:
+        latest = sync_state.get("gmail_last_sync_at") or sync_state.get("calendar_last_sync_at")
+        if latest:
+            try:
+                base_dt = datetime.fromisoformat(latest.replace("Z", "+00:00"))
+            except ValueError:
+                base_dt = datetime.now(UTC) - timedelta(days=7)
+        else:
+            base_dt = datetime.now(UTC) - timedelta(days=7)
+    base_dt = base_dt.astimezone(UTC).replace(microsecond=0)
+    return {
+        "gmail_since_epoch": int(base_dt.timestamp()),
+        "gmail_since_date": base_dt.strftime("%Y-%m-%d"),
+        "calendar_since_iso": base_dt.isoformat().replace("+00:00", "Z"),
+    }
 
 
 def main():
     parser = argparse.ArgumentParser(description="Sync Gmail and Calendar into CRM memory.")
-    parser.add_argument("--since", default=(date.today() - timedelta(days=7)).strftime("%Y-%m-%d"))
+    parser.add_argument("--since")
     parser.add_argument("--autonomous", action="store_true")
     args = parser.parse_args()
 
@@ -446,14 +582,35 @@ def main():
     contacts = contact_map()
     active_emails = active_contact_emails(contacts)
     interactions = load_json(INTERACTIONS_PATH, {})
+    sync_state = load_sync_state()
+    sync_window = resolve_sync_window(args.since, sync_state)
     discoveries = []
     proposals = []
     existing_refs = existing_activity_refs()
 
-    since_iso = f"{args.since}T00:00:00Z"
     until_iso = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    process_gmail(active_emails, contacts, args.since, args.autonomous, interactions, proposals, discoveries, existing_refs)
-    process_calendar(active_emails, contacts, since_iso, until_iso, args.autonomous, interactions, proposals, discoveries, existing_refs)
+    process_gmail(
+        active_emails,
+        contacts,
+        sync_window["gmail_since_date"],
+        sync_window["gmail_since_epoch"],
+        args.autonomous,
+        interactions,
+        proposals,
+        discoveries,
+        existing_refs,
+    )
+    process_calendar(
+        active_emails,
+        contacts,
+        sync_window["calendar_since_iso"],
+        until_iso,
+        args.autonomous,
+        interactions,
+        proposals,
+        discoveries,
+        existing_refs,
+    )
 
     if discoveries:
         existing = load_json(DISCOVERY_PATH, [])
@@ -462,11 +619,14 @@ def main():
 
     save_json(WORKSPACE_UPDATES_PATH, proposals)
     save_json(INTERACTIONS_PATH, interactions)
+    save_sync_state(until_iso, until_iso)
     print(
         json.dumps(
             {
                 "mode": "autonomous" if args.autonomous else "interactive",
                 "known_contacts": len(active_emails),
+                "gmail_since_date": sync_window["gmail_since_date"],
+                "calendar_since_iso": sync_window["calendar_since_iso"],
                 "discoveries_added": len(discoveries),
                 "workspace_updates": len(proposals),
             },

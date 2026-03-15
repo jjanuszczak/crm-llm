@@ -33,6 +33,8 @@ Proactively scans Gmail and Google Calendar for interactions with contacts linke
 6.  **Inference Logic & Deduplication:**
     *   **Known Gmail Messages:** In interactive mode, stage activity proposals in `CRM_DATA_PATH/staging/workspace_updates.json`. In autonomous mode, create `Activity` records directly for known active-opportunity contacts.
     *   **Calendar Events:** Apply the same interactive/autonomous branching for matched attendees.
+    *   **Content Enrichment:** Always read the Gmail message body or calendar event description/location/attendees before writing an `Activity`. Never create a durable record from subject or title alone.
+    *   **Persistent Checkpointing:** Save the last successful Gmail and Calendar sync timestamps in `CRM_DATA_PATH/staging/workspace_sync_state.json`. Use that checkpoint by default on the next run unless the user explicitly passes `--since`.
     *   **Deduplication:** Skip items whose `source-ref` already exists on an `Activity`.
     *   **Telemetry:** Update `CRM_DATA_PATH/staging/interactions.json` with `last_date` and rolling 7-day hit counts.
 

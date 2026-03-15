@@ -3,8 +3,8 @@ import os
 import sys
 from datetime import date
 
-from frontmatter_utils import parse_markdown_frontmatter, write_frontmatter_file
-from lead_manager import get_crm_data_path, slugify
+from frontmatter_utils import dated_record_id, parse_markdown_frontmatter, slugify, write_frontmatter_file
+from lead_manager import get_crm_data_path
 
 
 LOGIC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
@@ -88,13 +88,13 @@ def create_activity(args):
     if args.status not in VALID_ACTIVITY_STATUSES:
         raise ValueError(f"Invalid activity status '{args.status}'.")
 
-    activity_id = slugify(args.title)
+    activity_date = args.date or date.today().strftime("%Y-%m-%d")
+    activity_id = dated_record_id(activity_date, args.title)
     file_path = os.path.join(ACTIVITIES_DIR, f"{activity_id}.md")
     if os.path.exists(file_path):
         raise FileExistsError(f"Activity already exists: {file_path}")
 
     today = date.today().strftime("%Y-%m-%d")
-    activity_date = args.date or today
     rendered = render_template(
         ACTIVITY_TEMPLATE_PATH,
         {

@@ -3,8 +3,8 @@ import os
 import sys
 from datetime import date
 
-from frontmatter_utils import load_frontmatter_file, parse_markdown_frontmatter, serialize_frontmatter, write_frontmatter_file
-from lead_manager import get_crm_data_path, slugify, link_for
+from frontmatter_utils import dated_record_id, load_frontmatter_file, parse_markdown_frontmatter, serialize_frontmatter, slugify, write_frontmatter_file
+from lead_manager import get_crm_data_path, link_for
 
 
 VALID_STATUSES = {"new", "processing", "processed", "ignored"}
@@ -101,7 +101,8 @@ def note_path(title):
 
 
 def activity_path(title):
-    return os.path.join(ACTIVITIES_DIR, f"{slugify(title)}.md")
+    activity_id = dated_record_id(date.today().strftime("%Y-%m-%d"), title)
+    return os.path.join(ACTIVITIES_DIR, f"{activity_id}.md")
 
 
 def create_note_from_inbox(frontmatter, parent_type, parent_name):
@@ -133,11 +134,11 @@ def create_note_from_inbox(frontmatter, parent_type, parent_name):
 
 
 def create_activity_from_inbox(frontmatter, parent_type, parent_name):
-    activity_id = f"{frontmatter['id']}-activity"
     title = frontmatter["title"]
     file_path = activity_path(title)
     if os.path.exists(file_path):
         return file_path
+    activity_id = dated_record_id(date.today().strftime("%Y-%m-%d"), title)
 
     rendered = render_template(
         ACTIVITY_TEMPLATE_PATH,
@@ -166,7 +167,8 @@ def create_activity_from_inbox(frontmatter, parent_type, parent_name):
 
 def create_task_from_inbox(frontmatter, opportunity_name=""):
     title = frontmatter["title"]
-    file_path = os.path.join(TASKS_DIR, f"{slugify(title)}.md")
+    task_id = dated_record_id(date.today().strftime("%Y-%m-%d"), title)
+    file_path = os.path.join(TASKS_DIR, f"{task_id}.md")
     if os.path.exists(file_path):
         return file_path
 
@@ -174,7 +176,7 @@ def create_task_from_inbox(frontmatter, opportunity_name=""):
     opportunity_link = link_for("Opportunities", slugify(opportunity_name)) if opportunity_name else ""
     content = (
         "---\n"
-        f'id: "{slugify(title)}"\n'
+        f'id: "{task_id}"\n'
         f'task-name: "{title}"\n'
         "status: todo\n"
         "priority: medium\n"

@@ -13,7 +13,7 @@ Creates a new task file in the `CRM_DATA_PATH/Tasks/` directory. This skill ensu
     *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
 2.  **File Naming:**
-    *   Construct the name as `[YYYY-MM-DD] - [Task Name].md` (using the due date for chronological sorting in the folder).
+    *   Construct the file name as `YYYY-MM-DD-[slugified task name].md` using the due date for chronological sorting in the folder.
     *   Verify the file does not already exist in the `CRM_DATA_PATH/Tasks/` directory.
 
 3.  **Template Population:**

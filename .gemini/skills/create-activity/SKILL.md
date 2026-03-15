@@ -13,7 +13,7 @@ Creates a first-class activity file in the `CRM_DATA_PATH/Activities/` directory
     *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
 2.  **File Naming:**
-    *   Construct the name from a slugified activity title.
+    *   Construct the file name as `YYYY-MM-DD-[slugified activity title].md` using the activity date.
     *   Verify the file does not already exist in the `CRM_DATA_PATH/Activities/` directory.
 
 3.  **Template Population:**
@@ -30,13 +30,14 @@ Creates a first-class activity file in the `CRM_DATA_PATH/Activities/` directory
     *   Set `date-created` and `date-modified`.
 
 4.  **Content Capture:**
+    *   Always read the underlying source content before creating the record. For emails, read the message body or usable snippet. For meetings, read the event description, attendees, location, and any linked notes if available.
     *   **Outcomes:** Summarize the key results of the activity.
     *   **Detailed Notes:** Capture the discussion points, stakeholder sentiment, and raw data (like email text).
     *   **Action Items:** Extract specific follow-up tasks, assign owners, and set deadlines.
     *   **Strategic Insights:** Record any "little known" facts or strategic shifts discovered.
 
 5.  **File Creation:**
-    *   Write the content to `CRM_DATA_PATH/Activities/[Activity Name].md`.
+    *   Write the content to `CRM_DATA_PATH/Activities/[YYYY-MM-DD-slug].md`.
 
 6.  **Automatic Bookkeeping:**
     *   Commit the new file to the nested data repository:

@@ -43,6 +43,16 @@ def write_frontmatter_file(file_path, frontmatter, body):
         handle.write(serialized + body)
 
 
+def dated_record_id(record_date, title):
+    normalized_date = _coerce_date_string(record_date)
+    return f"{normalized_date}-{slugify(title)}"
+
+
+def slugify(value):
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "-", str(value).strip())
+    return re.sub(r"-{2,}", "-", cleaned).strip("-") or "record"
+
+
 def serialize_frontmatter(frontmatter):
     lines = ["---"]
     for key, value in frontmatter.items():
@@ -135,6 +145,15 @@ def _parse_date(value):
         except ValueError:
             return None
     return None
+
+
+def _coerce_date_string(value):
+    if isinstance(value, (datetime, date)):
+        return value.strftime("%Y-%m-%d")
+    parsed = _parse_date(str(value))
+    if parsed is not None:
+        return parsed.strftime("%Y-%m-%d")
+    return str(value)
 
 
 def _serialize_key_value(key, value):

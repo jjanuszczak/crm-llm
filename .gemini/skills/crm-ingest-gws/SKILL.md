@@ -41,6 +41,7 @@ The agent categorizes actions into tiers to balance automation with trust:
 
 ## Record Creation Rules
 - **Deduplication**: Uses `source-ref` (Gmail ID / Calendar ID) to prevent duplicates.
+- **Source Linking**: Always populate the `email-link` or appropriate reference field in the CRM record using the `source_link` provided in the `WorkspaceEvent`.
 - **Content Enrichment**: Summarizes body content; never uses subjects alone.
 - **Telemetry**: Automatically updates `interactions.json` to feed the Intelligence Engine.
 

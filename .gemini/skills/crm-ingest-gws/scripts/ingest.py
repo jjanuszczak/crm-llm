@@ -138,6 +138,7 @@ class EventNormalizer:
         return {
             "source_type": "gmail",
             "source_id": msg["id"],
+            "source_link": f"https://mail.google.com/mail/u/0/#inbox/{msg['id']}",
             "thread_id": msg["threadId"],
             "event_time": datetime.fromtimestamp(int(msg.get("internalDate", 0))/1000, UTC).isoformat(),
             "direction": "inbound" if from_email != "operator@example.com" else "outbound",
@@ -164,6 +165,7 @@ class EventNormalizer:
         return {
             "source_type": "calendar",
             "source_id": event["id"],
+            "source_link": event.get("htmlLink", ""),
             "thread_id": None,
             "event_time": event_time,
             "direction": "meeting",

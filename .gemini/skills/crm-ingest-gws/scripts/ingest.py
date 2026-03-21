@@ -231,6 +231,56 @@ class InteractionInferrer:
             
         return signals
 
+class TaskAnalyzer:
+    """Analyzes activities against open tasks and extracts new ones."""
+    def __init__(self, open_tasks):
+        self.open_tasks = open_tasks
+
+    def find_matching_tasks(self, match_data):
+        """Finds open tasks that could be completed by this activity."""
+        matches = []
+        # If the match is a contact/account/opportunity, we look for tasks with the same linkage
+        match_path = match_data.get("path") if isinstance(match_data, dict) else None
+        if not match_path:
+            return []
+
+        for task_id, task_fm in self.open_tasks.items():
+            # Check for direct wikilink match in common linkage fields
+            linkage_keys = ["opportunity", "account", "contact"]
+            for key in linkage_keys:
+                if task_fm.get(key) == match_path:
+                    matches.append({
+                        "id": task_id,
+                        "name": task_fm.get("task-name", "Untitled Task"),
+                        "rationale": f"Activity context matches task {key}"
+                    })
+                    break
+        return matches
+
+    @staticmethod
+    def extract_action_items(text):
+        """Extracts potential new tasks from text."""
+        # Heuristic: lines starting with common action prefixes
+        patterns = [
+            r"(?:I will|Please|Action item|Next steps?|Task):?\s*(.*)",
+            r"(?:\n|^)\s*[-*]\s+(.*(?:follow up|send|check|call|meeting|due|by|on\s+\d{4}-\d{2}-\d{2}).*)",
+        ]
+        items = []
+        for p in patterns:
+            # We only take the first line if it's a multi-line match
+            found = re.findall(p, text, re.I)
+            for f in found:
+                item = f.split('\n')[0].strip()
+                if len(item) > 10 and len(item) < 200: # Filter out noise
+                    items.append(item)
+        
+        # Deduplicate
+        unique_items = []
+        for i in items:
+            if i not in unique_items:
+                unique_items.append(i)
+        return unique_items
+
 def get_crm_index():
     index = {"contacts": {}, "leads": {}, "accounts": {}, "opportunities": {}}
     
@@ -265,6 +315,15 @@ def get_crm_index():
 
     _add_emails("Contacts", "contacts", "full-name", "Contacts")
     _add_emails("Leads", "leads", "lead-name", "Leads")
+
+    index["tasks"] = {}
+    tasks_dir = os.path.join(CRM_DATA_PATH, "Tasks")
+    if os.path.exists(tasks_dir):
+        for f in os.listdir(tasks_dir):
+            if f.endswith(".md"):
+                fm, _ = load_frontmatter_file(os.path.join(tasks_dir, f))
+                if fm.get("status") == "todo":
+                    index["tasks"][f"[[Tasks/{f[:-3]}]]"] = fm
 
     opps_dir = os.path.join(CRM_DATA_PATH, "Opportunities")
     if os.path.exists(opps_dir):
@@ -302,6 +361,7 @@ def main():
     harvester = SourceHarvester(since_dt)
     resolver = EntityResolver(index, noise_domains, noise_prefixes)
     inferrer = InteractionInferrer()
+    task_analyzer = TaskAnalyzer(index["tasks"])
     
     proposals = []
     discoveries = []
@@ -333,6 +393,15 @@ def main():
 
         if confidence > 0:
             signals = inferrer.infer_signals(event["body_text"])
+            
+            # Task completion check
+            matched_tasks = task_analyzer.find_matching_tasks(match["data"])
+            if matched_tasks:
+                signals.append("task_completion_detected")
+            
+            # New task extraction
+            extracted_tasks = task_analyzer.extract_action_items(event["body_text"])
+
             proposals.append({
                 "action_type": "activity_proposal",
                 "source_event": event,
@@ -341,6 +410,8 @@ def main():
                 "rationale": reason,
                 "signals": signals,
                 "tier": tier,
+                "task_completions": matched_tasks,
+                "new_tasks": extracted_tasks,
                 "auto_execute": args.autonomous or args.auto_tier >= tier
             })
         elif reason == "No match found":
@@ -368,6 +439,15 @@ def main():
 
             if confidence > 0:
                 signals = inferrer.infer_signals(event["body_text"])
+                
+                # Task completion check
+                matched_tasks = task_analyzer.find_matching_tasks(match["data"])
+                if matched_tasks:
+                    signals.append("task_completion_detected")
+                
+                # New task extraction
+                extracted_tasks = task_analyzer.extract_action_items(event["body_text"])
+
                 proposals.append({
                     "action_type": "activity_proposal",
                     "source_event": event,
@@ -376,6 +456,8 @@ def main():
                     "rationale": reason,
                     "signals": signals,
                     "tier": tier,
+                    "task_completions": matched_tasks,
+                    "new_tasks": extracted_tasks,
                     "auto_execute": args.autonomous or args.auto_tier >= tier
                 })
                 matched_any = True

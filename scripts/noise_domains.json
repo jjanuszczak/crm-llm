@@ -8,7 +8,16 @@
     "me.com",
     "live.com",
     "msn.com",
-    "aol.com"
+    "aol.com",
+    "theimpression.com",
+    "every.to",
+    "readwise.io",
+    "crnrstone.com",
+    "myfitnesspal.com",
+    "convertkit.com",
+    "kit.com",
+    "hsbc.com.ph",
+    "rockwell.com.ph"
   ],
   "service": [
     "zoom.us",
@@ -22,7 +31,8 @@
     "atlassian.net",
     "jira.com",
     "confluence.com",
-    "trello.com"
+    "trello.com",
+    "linkedin.com"
   ],
   "noise": [
     "no-reply",
@@ -32,6 +42,11 @@
     "marketing",
     "newsletter",
     "billing",
-    "accounts"
+    "accounts",
+    "clubadmin",
+    "hello",
+    "connect",
+    "help",
+    "onlineservices"
   ]
 }

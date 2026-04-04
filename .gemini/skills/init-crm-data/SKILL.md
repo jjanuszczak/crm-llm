@@ -14,6 +14,7 @@ Initializes a new CRM data repository as a nested subdirectory within the `crm-l
 
 2.  **Folder Structure:**
     *   Create the following standard subdirectories:
+        *   `Organizations/`
         *   `Accounts/`
         *   `Contacts/`
         *   `Leads/`

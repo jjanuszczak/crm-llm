@@ -26,6 +26,7 @@ CRM_DATA_PATH = get_crm_data_path()
 RELATIONSHIP_MEMORY_PATH = os.path.join(CRM_DATA_PATH, "RELATIONSHIP_MEMORY.md")
 INTERACTIONS_PATH = os.path.join(CRM_DATA_PATH, "staging", "interactions.json")
 ENTITY_DIRS = {
+    "Organizations": os.path.join(CRM_DATA_PATH, "Organizations"),
     "Accounts": os.path.join(CRM_DATA_PATH, "Accounts"),
     "Contacts": os.path.join(CRM_DATA_PATH, "Contacts"),
     "Opportunities": os.path.join(CRM_DATA_PATH, "Opportunities"),
@@ -63,6 +64,8 @@ def collect_records(directory):
             except Exception:
                 continue
             if not frontmatter:
+                continue
+            if root == ENTITY_DIRS.get("Accounts") and frontmatter.get("migration-target") == "organization":
                 continue
             records.append(
                 {
@@ -205,6 +208,8 @@ def related_links(records, limit=5):
 
 
 def entity_display_name(entity_type, frontmatter, basename):
+    if entity_type == "Organizations":
+        return frontmatter.get("organization-name", basename)
     if entity_type == "Accounts":
         return frontmatter.get("company-name", basename)
     if entity_type == "Contacts":

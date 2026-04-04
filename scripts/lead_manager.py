@@ -38,6 +38,7 @@ def get_crm_data_path():
 
 
 CRM_DATA_PATH = get_crm_data_path()
+ORGANIZATIONS_DIR = os.path.join(CRM_DATA_PATH, "Organizations")
 LEADS_DIR = os.path.join(CRM_DATA_PATH, "Leads")
 CONVERTED_LEADS_DIR = os.path.join(LEADS_DIR, "Converted")
 ACCOUNTS_DIR = os.path.join(CRM_DATA_PATH, "Accounts")
@@ -60,7 +61,7 @@ def ensure_leads_dir():
 
 
 def ensure_core_dirs():
-    for directory in [LEADS_DIR, CONVERTED_LEADS_DIR, ACCOUNTS_DIR, CONTACTS_DIR, OPPORTUNITIES_DIR, NOTES_DIR, ACTIVITIES_DIR, TASKS_DIR]:
+    for directory in [ORGANIZATIONS_DIR, LEADS_DIR, CONVERTED_LEADS_DIR, ACCOUNTS_DIR, CONTACTS_DIR, OPPORTUNITIES_DIR, NOTES_DIR, ACTIVITIES_DIR, TASKS_DIR]:
         os.makedirs(directory, exist_ok=True)
 
 
@@ -263,42 +264,64 @@ def cmd_validate(args):
     print("ready-for-qualification")
 
 
-def create_account_record(company_name, owner, source_lead):
+def importance_from_priority(value):
+    if value in PRIORITY_CHOICES:
+        return value
+    return "medium"
+
+
+def create_organization_record(company_name, source_lead):
+    slug = slugify(company_name)
+    file_path = os.path.join(ORGANIZATIONS_DIR, f"{slug}.md")
+    if os.path.exists(file_path):
+        return file_path
+
+    today = date.today().strftime("%Y-%m-%d")
+    frontmatter = {
+        "id": f"org-{slug}",
+        "organization-name": company_name,
+        "domain": "",
+        "headquarters": "",
+        "industry": "",
+        "size": 0,
+        "url": "",
+        "organization-class": "operating-company",
+        "organization-subtype": "",
+        "investment-mandate": [],
+        "check-size": "",
+        "last-contacted": today,
+        "source": "lead-conversion",
+        "source-ref": source_lead,
+        "date-created": today,
+        "date-modified": today,
+    }
+    body = f"# **Organization: {company_name}**\n\n## **Identity**\nCreated from lead conversion.\n"
+    write_frontmatter_file(file_path, frontmatter, body)
+    return file_path
+
+
+def create_account_record(company_name, owner, source_lead, strategic_importance="medium", organization_path=None):
     slug = slugify(company_name)
     file_path = os.path.join(ACCOUNTS_DIR, f"{slug}.md")
     if os.path.exists(file_path):
         return file_path
 
     today = date.today().strftime("%Y-%m-%d")
+    organization_slug = os.path.splitext(os.path.basename(organization_path))[0] if organization_path else slug
     frontmatter = {
-        "id": slug,
-        "company-name": company_name,
+        "id": f"acct-{slug}",
+        "organization": link_for("Organizations", organization_slug),
         "owner": owner or "john",
-        "type": "corporate",
-        "headquarters": "",
-        "industry": "",
-        "size": 0,
-        "url": "",
-        "priority": "medium",
         "relationship-stage": "prospect",
-        "stage": "prospect",
-        "investment-mandate": [],
-        "check-size": "",
-        "funding-stage": "",
-        "target-raise": 0,
+        "strategic-importance": importance_from_priority(strategic_importance),
         "source": "lead-conversion",
         "source-ref": source_lead,
-        "warmth-score": 0,
-        "warmth-status": "neutral",
-        "velocity-score": 0,
-        "account-warmth-index": 0,
-        "last-contacted": today,
-        "days-since-contact": 0,
         "source-lead": source_lead,
+        "last-contacted": today,
         "date-created": today,
         "date-modified": today,
     }
-    body = f"# **Strategic Due Diligence Report: {company_name}**\n\n## **Historical Evolution and Foundational Genesis**\nCreated from lead conversion.\n"
+    body = f"# **Account Relationship: {company_name}**\n\n## **Relationship Summary**\nCreated from lead conversion.\n"
     write_frontmatter_file(file_path, frontmatter, body)
     return file_path
 
@@ -327,11 +350,7 @@ def create_contact_record(person_name, account_name, lead_frontmatter):
         "source-lead": lead_link,
         "relationship-status": "active",
         "priority": lead_frontmatter.get("priority", "medium"),
-        "warmth-score": 0,
-        "warmth-status": "neutral",
-        "velocity-score": 0,
         "last-contacted": today,
-        "days-since-contact": 0,
         "date-created": today,
         "date-modified": today,
     }
@@ -340,7 +359,7 @@ def create_contact_record(person_name, account_name, lead_frontmatter):
     return file_path
 
 
-def create_opportunity_record(account_name, contact_name, source_lead, owner="john", opportunity_name=None):
+def create_opportunity_record(account_name, contact_name, source_lead, owner="john", opportunity_name=None, organization_path=None):
     account_slug = slugify(account_name)
     contact_slug = slugify(contact_name)
     year = next_year_string()
@@ -351,6 +370,7 @@ def create_opportunity_record(account_name, contact_name, source_lead, owner="jo
         return file_path
 
     today = date.today().strftime("%Y-%m-%d")
+    organization_slug = os.path.splitext(os.path.basename(organization_path))[0] if organization_path else account_slug
     frontmatter = {
         "id": opportunity_slug,
         "opportunity-name": computed_name,
@@ -361,11 +381,11 @@ def create_opportunity_record(account_name, contact_name, source_lead, owner="jo
         "deal": "",
         "primary-contact": link_for("Contacts", contact_slug),
         "source-lead": source_lead,
+        "organization": link_for("Organizations", organization_slug),
         "opportunity-type": "advisory",
         "is-active": True,
         "stage": "discovery",
         "commercial-value": 0,
-        "deal-value": 0,
         "close-date": today,
         "probability": 10,
         "product-service": "Advisory",
@@ -484,7 +504,14 @@ def cmd_convert(args):
     company_name = frontmatter.get("company-name")
     lead_link = link_for("Leads", os.path.splitext(os.path.basename(file_path))[0])
 
-    account_path = create_account_record(company_name, frontmatter.get("owner", "john"), lead_link)
+    organization_path = create_organization_record(company_name, lead_link)
+    account_path = create_account_record(
+        company_name,
+        frontmatter.get("owner", "john"),
+        lead_link,
+        frontmatter.get("priority", "medium"),
+        organization_path,
+    )
     contact_path = create_contact_record(person_name, company_name, frontmatter)
     opportunity_path = create_opportunity_record(
         company_name,
@@ -492,8 +519,10 @@ def cmd_convert(args):
         lead_link,
         frontmatter.get("owner", "john"),
         args.opportunity_name,
+        organization_path,
     )
 
+    organization_link = link_for("Organizations", os.path.splitext(os.path.basename(organization_path))[0])
     account_link = link_for("Accounts", os.path.splitext(os.path.basename(account_path))[0])
     contact_link = link_for("Contacts", os.path.splitext(os.path.basename(contact_path))[0])
     opportunity_link = link_for("Opportunities", os.path.splitext(os.path.basename(opportunity_path))[0])
@@ -517,6 +546,7 @@ def cmd_convert(args):
     moved_tasks = move_open_tasks(lead_link, account_link, contact_link, opportunity_link)
 
     frontmatter["status"] = "converted"
+    frontmatter["converted-organization"] = organization_link
     frontmatter["converted-contact"] = contact_link
     frontmatter["converted-account"] = account_link
     frontmatter["converted-opportunities"] = [opportunity_link]
@@ -524,6 +554,7 @@ def cmd_convert(args):
     archived_path = archive_converted_lead(file_path, frontmatter, body)
 
     print("archived-lead:", archived_path)
+    print("organization:", organization_path)
     print("account:", account_path)
     print("contact:", contact_path)
     print("opportunity:", opportunity_path)

@@ -14,7 +14,7 @@ def init_vault(name):
     
     # 1. Create Folders
     folders = [
-        "Accounts", "Contacts", "Leads", "Opportunities", "Deals",
+        "Organizations", "Accounts", "Contacts", "Leads", "Opportunities", "Deals",
         "Activities", "Notes", "Inbox", "Tasks", "Reports", ".obsidian"
     ]
     for folder in folders:

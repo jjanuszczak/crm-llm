@@ -30,6 +30,7 @@ Creates and manages first-class `Lead` records in `CRM_DATA_PATH/Leads/` using t
      * `disqualified`
    * Enforce allowed transitions between statuses.
    * Conversion creates:
+     * `Organization`
      * `Contact`
      * `Account`
      * `Opportunity`
@@ -49,6 +50,7 @@ Creates and manages first-class `Lead` records in `CRM_DATA_PATH/Leads/` using t
    * Copy any lead-linked v4 `Note` and `Activity` records onto the new `Opportunity`, with secondary links to the new `Contact` and `Account`.
    * Move any open lead-linked tasks primarily onto the new `Opportunity`.
    * Preserve provenance back to the source `Lead`.
+   * Link the new `Account` to the new canonical `Organization`.
 
 7. **Output:**
    * Confirm the affected lead path and resulting status to the user.

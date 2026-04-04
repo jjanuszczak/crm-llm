@@ -19,8 +19,9 @@ Runs the brokerage matchmaker to identify likely matches between `Deals` / `Deal
 
 3.  **Load Investor Accounts:**
     *   Scan `CRM_DATA_PATH/Accounts/` for markdown account files.
-    *   Filter for `type: investor`.
-    *   Parse mandate and check-size fields.
+    *   Resolve the linked `Organization` when present.
+    *   Filter for investor organizations/accounts.
+    *   Parse mandate and check-size fields from the Organization layer with Account fallback for legacy records.
 
 4.  **Calculate Matches:**
     *   Score sector alignment between the deal and the investor mandate.

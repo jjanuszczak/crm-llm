@@ -1,46 +1,29 @@
 ---
-id: "account-{{company-name}}"
-company-name: "String"
+id: "account-{{organization-id}}"
+organization: "[[Organizations/{{Organization Link}}]]"
 owner: "{{Owner}}"
-type: "investor" | "startup" | "corporate"
-headquarters: "String"
-industry: "String"
-size: 0
-url: "URL"
-priority: "high" | "medium" | "low"
 relationship-stage: "prospect" | "engaged" | "customer" | "churned"
-stage: "prospect" | "engaged" | "customer" | "churned"
-investment-mandate: []
-check-size: "String"
-funding-stage: "String"
-target-raise: 0
+strategic-importance: "high" | "medium" | "low"
 source: "{{manual | lead-conversion | referral | workspace-discovery}}"
 source-ref: "{{Source Reference}}"
-warmth-score: 0
-warmth-status: "neutral"
-velocity-score: 0
-account-warmth-index: 0
+source-lead: "{{Source Lead}}"
 last-contacted: YYYY-MM-DD
-days-since-contact: 0
 date-created: YYYY-MM-DD
 date-modified: YYYY-MM-DD
 ---
-# **Strategic Due Diligence Report: {{company-name}}**
+# **Account Relationship: {{Organization Name}}**
 
-## **Historical Evolution and Foundational Genesis**
-{{Overview of the company's origin, founders, and trajectory.}}
+## **Relationship Summary**
+{{Current commercial relationship summary and what matters now.}}
 
-## **Financial Architecture & Investment Profile**
-{{Details on funding, revenue, or investment capacity/mandate.}}
+## **Relationship Lifecycle**
+{{Why this account is in the pipeline, current stage, and recent progress.}}
 
-## **Core Leadership & Governance**
-{{Key executives and board members.}}
+## **Strategic Importance**
+{{Why this organization matters commercially or strategically over time.}}
 
-## **Market Positioning & Strategic Fit**
-{{How they fit into the ecosystem and your specific deals.}}
+## **Execution Notes**
+{{Active constraints, stakeholder dynamics, and next-step framing.}}
 
-## **Reputation & Sentiment**
-{{Market perception and any "red flags."}}
-
-## **Advisory / Brokerage Roadmap**
-{{Specific hooks and introduction plans.}}
+## **Open Questions**
+{{What still needs to be learned or validated.}}

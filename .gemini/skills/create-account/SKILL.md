@@ -1,7 +1,7 @@
 # Skill: Create Account
 
 ## Description
-Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a specified company. This skill automates file creation, populates the v4 Account frontmatter, and performs web research to generate a comprehensive strategic due diligence report.
+Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a specified organization. In the Organization-first model, `Organization` is the stable entity layer and `Account` is the commercial relationship layer.
 
 ## Usage
 `create-account "Company Name" --url "https://example.com" --priority "medium"`
@@ -12,9 +12,10 @@ Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a spec
     *   Read `CRM_DATA_PATH` from `.env`.
     *   Verify `CRM_DATA_PATH` is a subdirectory within the project root.
 
-2.  **File Naming:**
-    *   Convert the `company` to `[Company-Name].md` format (e.g., `ZingHR.md`).
-    *   Check if `CRM_DATA_PATH/Accounts/[Company-Name].md` already exists. If it does, stop and notify the user.
+2.  **Organization First:**
+    *   Ensure a corresponding `Organization` exists in `CRM_DATA_PATH/Organizations/`.
+    *   If not, create it first using `create-organization`.
+    *   Then create the `Account` record linked to that organization.
 
 3.  **Web Research:**
     *   **Search 1:** Google search for `"[Company Name]" headquarters industry revenue headcount 2025 2026` to find frontmatter data.
@@ -25,23 +26,19 @@ Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a spec
 4.  **Content Generation (Using `templates/account-template.md`):**
     *   **Frontmatter:**
         *   `id`: Stable machine-friendly account ID.
-        *   `company-name`: The official name of the company.
+        *   `organization`: Link to the canonical organization record.
         *   `owner`: Default to the primary operator.
-        *   `headquarters`: City, Country.
-        *   `industry`: Primary industry sector.
-        *   `size`: Revenue in USD Millions, estimated commercial scale, or headcount depending on the best available signal.
-        *   `url`: The company's website.
-        *   `priority`: As provided or defaulted.
         *   `relationship-stage`: Default to `prospect`.
         *   `stage`: Keep in sync with `relationship-stage` for backward compatibility while older workflows still reference it.
+        *   `strategic-importance`: Stable relationship importance (`high|medium|low`).
         *   `source`: Default to `manual` unless the account is created from a clearer origin such as `lead-conversion`.
         *   `source-ref`: Optional provenance link, especially when the Account is created from lead conversion or discovery review.
+        *   `last-contacted`: Persist the latest observed interaction date.
         *   `date-created`: Current date (YYYY-MM-DD).
         *   `date-modified`: Current date (YYYY-MM-DD).
     *   **Body Sections:**
-        *   Populate all sections defined in `templates/account-template.md` (Executive Summary, Financial Architecture, etc.) with synthesized information from the research.
-        *   Create financial tables if data is available (retaining local currency but providing USD conversions).
-        *   Create competitive comparison tables.
+        *   Focus the body on relationship context, strategic importance, and execution notes.
+        *   Stable identity and investor-profile facts belong on the linked Organization record rather than the Account.
 
 5.  **File Creation:**
     *   Write the generated content to `CRM_DATA_PATH/Accounts/[Company-Name].md`.
@@ -49,6 +46,7 @@ Creates a new account file in the `CRM_DATA_PATH/Accounts/` directory for a spec
 6.  **Compatibility Note:**
     *   `relationship-stage` is the clearer v4 relationship-state field.
     *   `stage` should still be populated in parallel until older repo logic is fully migrated.
+    *   Do not persist computed execution-priority or `days-since-contact` on the Account.
 
 7.  **Automatic Bookkeeping:**
     *   Commit the new file to the nested data repository:

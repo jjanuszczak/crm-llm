@@ -25,6 +25,7 @@ def get_crm_data_path():
     return os.getenv("CRM_DATA_PATH", os.getcwd())
 
 CRM_DATA_PATH = get_crm_data_path()
+ORGANIZATIONS_DIR = os.path.join(CRM_DATA_PATH, "Organizations")
 ACCOUNTS_DIR = os.path.join(CRM_DATA_PATH, "Accounts")
 CONTACTS_DIR = os.path.join(CRM_DATA_PATH, "Contacts")
 ACTIVITIES_DIR = os.path.join(CRM_DATA_PATH, "Activities")
@@ -101,7 +102,7 @@ def calculate_warmth(last_contacted_date, priority, velocity=0):
     if not last_contacted_date: return 0, "cold", 999
     today = date.today()
     days_since = (today - last_contacted_date).days
-    limit = PRIORITY_THRESHOLDS.get(priority.lower(), PRIORITY_THRESHOLDS['default'])
+    limit = PRIORITY_THRESHOLDS.get(str(priority or "medium").lower(), PRIORITY_THRESHOLDS['default'])
     score = max(0, int(100 * (1 - (days_since / limit))))
     score = min(100, score + (velocity * 10))
     if score > 70: status = "warm"
@@ -136,6 +137,8 @@ def main():
                     fm, _ = load_frontmatter_file(path)
                     if not fm:
                         continue
+                    if directory == ACCOUNTS_DIR and fm.get('migration-target') == 'organization':
+                        continue
                 except: continue
                 
                 last_date = get_latest_interaction_date(name, fm.get('email'), activities_data, interactions_cache)
@@ -145,7 +148,7 @@ def main():
                 update_frontmatter(path, {
                     'warmth-score': score, 'warmth-status': stat, 'velocity-score': vel,
                     'last-contacted': last_date.strftime('%Y-%m-%d') if last_date else "2000-01-01",
-                    'days-since-contact': days, 'date-modified': date.today().strftime('%Y-%m-%d')
+                    'date-modified': date.today().strftime('%Y-%m-%d')
                 })
                 
                 if (stat == "cold" and fm.get('priority') in ['high', 'medium']) or vel >= 3:
@@ -160,8 +163,8 @@ def main():
                     if parent not in account_stats: account_stats[parent] = []
                     account_stats[parent].append(score)
 
-    # 2. Process Accounts and Deals
-    for directory in [ACCOUNTS_DIR] + deal_directories():
+    # 2. Process Organizations, Accounts, and Deals
+    for directory in [ORGANIZATIONS_DIR, ACCOUNTS_DIR] + deal_directories():
         if not os.path.exists(directory): continue
         for f in os.listdir(directory):
             if f.endswith(".md"):
@@ -175,7 +178,8 @@ def main():
                 
                 last_date = get_latest_interaction_date(name, fm.get('email'), activities_data, interactions_cache)
                 vel = get_velocity(fm.get('email'), interactions_cache)
-                score, stat, days = calculate_warmth(last_date, fm.get('priority', 'medium'), vel)
+                importance = fm.get('strategic-importance') or fm.get('priority', 'medium')
+                score, stat, days = calculate_warmth(last_date, importance, vel)
                 
                 # Relational Graphing: Calculate Account/Deal Warmth Index
                 linked_scores = account_stats.get(name, [])
@@ -189,11 +193,17 @@ def main():
                     'warmth-score': score, 'warmth-status': stat, 'velocity-score': vel,
                     'account-warmth-index': acc_index,
                     'last-contacted': last_date.strftime('%Y-%m-%d') if last_date else "2000-01-01",
-                    'days-since-contact': days, 'date-modified': date.today().strftime('%Y-%m-%d')
+                    'date-modified': date.today().strftime('%Y-%m-%d')
                 })
                 
-                if (stat == "cold" and fm.get('priority') in ['high', 'medium']) or vel >= 3:
-                    type_label = 'Account' if directory == ACCOUNTS_DIR else 'Deal'
+                important = importance in ['high', 'medium']
+                if (stat == "cold" and important) or vel >= 3:
+                    if directory == ORGANIZATIONS_DIR:
+                        type_label = 'Organization'
+                    elif directory == ACCOUNTS_DIR:
+                        type_label = 'Account'
+                    else:
+                        type_label = 'Deal'
                     at_risk.append({'name': name, 'type': type_label, 'status': stat, 'velocity': vel, 'days': days, 'index': acc_index})
 
     # 3. Generate INTELLIGENCE.md

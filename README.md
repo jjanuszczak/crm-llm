@@ -17,6 +17,8 @@ This repo gives an agent or developer the machinery to:
 - assemble relationship memory from `Notes`, `Activities`, `Tasks`, and linked entities
 - suggest investor/deal matches
 
+The current canonical schema lives in `docs/schema-spec.md`.
+
 ## Mental Model
 
 Think in two layers:
@@ -28,10 +30,11 @@ The vault is where the real work happens. The logic layer exists to read, write,
 ## Current v4 Model
 
 The system is now a v4 memory system. The key record types are:
+- `Organization`: stable market entity
 - `Inbox`: temporary raw capture
 - `Lead`: pre-conversion relationship record
 - `Contact`: person record
-- `Account`: company/entity record
+- `Account`: commercial relationship record
 - `Opportunity`: active engagement or commercial path
 - `Deal`: startup/inventory seeking capital
 - `Note`: durable context and strategic memory
@@ -42,7 +45,10 @@ Important v4 rules:
 - `Inbox/` replaces the old “notes as inbox” pattern.
 - `Notes/` are durable context, not raw intake.
 - If something happened, it should usually create an `Activity`.
-- `Lead` is first-class and converts by default to `Contact + Account + Opportunity`.
+- `Lead` is first-class and converts by default to `Organization + Contact + Account + Opportunity`.
+- `Organization` owns stable identity/classification, while `Account` owns the active commercial relationship.
+- Investor mandate and check-size stay on the organization side; fundraising stage and target raise stay on `Deal`.
+- `commercial-value` is canonical on Opportunities; `deal-value` is compatibility-only.
 - The default home view is relationship-first, not chronology-first.
 
 ## Quick Start
@@ -151,6 +157,7 @@ Legacy files may still exist in older filename shapes. Do not assume the whole v
 The most relevant skills for real use are:
 - `sync-workspace`
 - `update-dashboard`
+- `create-organization`
 - `create-lead`
 - `create-inbox-item`
 - `create-note`
@@ -165,28 +172,35 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 
 - [sync-workspace.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/sync-workspace/scripts/sync-workspace.py#L1): Gmail/Calendar ingestion
 - [update-dashboard.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/update-dashboard/scripts/update-dashboard.py#L1): dashboard refresh and downstream generation
+- [organization_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/organization_manager.py#L1): organization creation
 - [lead_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/lead_manager.py#L1): lead lifecycle and conversion
 - [inbox_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/inbox_manager.py#L1): Inbox creation and processing
 - [record_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/record_manager.py#L1): first-class Note and Activity creation
 - [relationship_memory.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/relationship_memory.py#L1): relationship memory assembly
 - [intelligence-engine.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/intelligence-engine.py#L1): telemetry and intelligence generation
 - [matchmaker.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/matchmaker.py#L1): deal/account matching
+- [migrate_accounts_to_organizations.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/migrate_accounts_to_organizations.py#L1): reference migration helper
+- [rewrite_organization_references.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/rewrite_organization_references.py#L1): reference rewrite helper
+- [migrate_opportunities_v41.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/migrate_opportunities_v41.py#L1): opportunity schema normalization helper
 
 ## Recommended Reading
 
-For product and schema context, read:
-- [prd-v4-memory-system.md](/Users/johnjanuszczak/Projects/crm-logic/docs/prd-v4-memory-system.md#L1)
-- [implementation-plan-v4-memory-system.md](/Users/johnjanuszczak/Projects/crm-logic/docs/implementation-plan-v4-memory-system.md#L1)
-- [schema-addendum-v4-core-records.md](/Users/johnjanuszczak/Projects/crm-logic/docs/schema-addendum-v4-core-records.md#L1)
-- [schema-addendum-v4-existing-entities.md](/Users/johnjanuszczak/Projects/crm-logic/docs/schema-addendum-v4-existing-entities.md#L1)
-- [schema-addendum-v4-deal-entity.md](/Users/johnjanuszczak/Projects/crm-logic/docs/schema-addendum-v4-deal-entity.md#L1)
-- [legacy-notes-migration-v4.md](/Users/johnjanuszczak/Projects/crm-logic/docs/legacy-notes-migration-v4.md#L1)
+For current product and schema context, read:
+- [schema-spec.md](/Users/johnjanuszczak/Projects/crm-logic/docs/schema-spec.md#L1)
+- [GEMINI.md](/Users/johnjanuszczak/Projects/crm-logic/GEMINI.md#L1)
+- [README.md](/Users/johnjanuszczak/Projects/crm-logic/README.md#L1)
+- [examples/README.md](/Users/johnjanuszczak/Projects/crm-logic/examples/README.md#L1)
+
+Historical and superseded design docs live in:
+- [archive](/Users/johnjanuszczak/Projects/crm-logic/docs/archive)
 
 ## Current Rough Edges
 
 Be aware of these realities:
 - the vault contains a mix of v4-native and older records
+- the vault still uses `Deal-Flow/` as the live deal directory
 - some legacy Activities and Tasks still use older frontmatter shapes
+- some compatibility fields are still tolerated by readers during migration cleanup
 - not every workflow auto-commits vault changes
 - GitHub MCP auth may be unreliable in this environment; `gh` CLI may be the fallback
 

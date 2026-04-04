@@ -33,12 +33,14 @@ Creates a new opportunity file in the `CRM_DATA_PATH/Opportunities/` directory. 
         *   `source`
         *   `source-ref`
         *   `source-lead` when the Opportunity originates from a converted Lead
+        *   `organization` linked from the parent Account
         *   `opportunity-type`
     *   Ensure the `account` property in the YAML frontmatter is correctly wikilinked: `account: "[[Account Name]]"`.
     *   Set `date-created` and `date-modified` to the current date (YYYY-MM-DD).
     *   Default `stage` to `discovery` and `probability` to `10`.
     *   Default `is-active` to `true`.
     *   Populate `commercial-value` and keep `deal-value` aligned for backward compatibility until older repo logic is fully migrated.
+    *   Do not place investor mandate, check size, or deal fundraising fields on the Opportunity.
 
 4.  **Contextual Enrichment:**
     *   Wikilink the `account` and `primary-contact` correctly.

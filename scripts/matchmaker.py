@@ -20,6 +20,7 @@ def get_crm_data_path():
     return os.getenv("CRM_DATA_PATH", os.getcwd())
 
 CRM_DATA_PATH = get_crm_data_path()
+ORGANIZATIONS_DIR = os.path.join(CRM_DATA_PATH, "Organizations")
 DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deals")
 LEGACY_DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deal-Flow")
 ACCOUNTS_DIR = os.path.join(CRM_DATA_PATH, "Accounts")
@@ -32,6 +33,13 @@ def deal_directories():
         if os.path.exists(directory):
             directories.append(directory)
     return directories
+
+
+def normalize_link(value):
+    text = str(value or "").strip()
+    if text.startswith("[[") and text.endswith("]]"):
+        text = text[2:-2]
+    return text.split("/")[-1]
 
 def calculate_match(deal, account):
     score = 0
@@ -77,12 +85,27 @@ def main():
                 deals.append({'name': f[:-3], 'fm': fm})
 
     accounts = []
+    organizations = {}
+    if os.path.exists(ORGANIZATIONS_DIR):
+        for f in os.listdir(ORGANIZATIONS_DIR):
+            if f.endswith(".md"):
+                fm, _ = load_frontmatter_file(os.path.join(ORGANIZATIONS_DIR, f))
+                if fm:
+                    organizations[f[:-3]] = fm
     if os.path.exists(ACCOUNTS_DIR):
         for f in os.listdir(ACCOUNTS_DIR):
             if f.endswith(".md"):
                 fm, _ = load_frontmatter_file(os.path.join(ACCOUNTS_DIR, f))
-                if fm and fm.get('type') == 'investor':
-                    accounts.append({'name': f[:-3], 'fm': fm})
+                if not fm:
+                    continue
+                if fm.get('migration-target') == 'organization':
+                    continue
+                organization = organizations.get(normalize_link(fm.get('organization')))
+                investor_type = (organization or fm).get('organization-class') or fm.get('type')
+                if investor_type == 'investor':
+                    merged = dict(organization or {})
+                    merged.update(fm)
+                    accounts.append({'name': f[:-3], 'fm': merged})
 
     all_matches = []
     for d in deals:

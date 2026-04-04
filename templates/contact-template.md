@@ -12,11 +12,7 @@ source: "{{manual | lead-conversion | network | conference | cold-outreach}}"
 source-ref: "{{Source Reference}}"
 relationship-status: "{{active | dormant | archived}}"
 priority: "{{high | medium | low}}"
-warmth-score: 0
-warmth-status: "neutral"
-velocity-score: 0
 last-contacted: "YYYY-MM-DD"
-days-since-contact: 0
 date-created: "{{YYYY-MM-DD}}"
 date-modified: "{{YYYY-MM-DD}}"
 ---

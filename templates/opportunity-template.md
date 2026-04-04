@@ -8,11 +8,11 @@ account: "[[{{Account}}]]"
 deal: "[[{{Deal Name}}]]"
 primary-contact: "[[{{Contact Name}}]]"
 source-lead: "[[{{Source Lead}}]]"
+organization: "[[Organizations/{{Organization Link}}]]"
 opportunity-type: "{{advisory | consulting | financing | hiring | partnership | other}}"
 is-active: true
 stage: discovery
 commercial-value: 0
-deal-value: 0
 close-date: {{YYYY-MM-DD}}
 probability: 10
 product-service: {{Product or Service Name}}

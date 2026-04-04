@@ -33,6 +33,7 @@ from frontmatter_utils import load_frontmatter_file
 
 
 DIRECTORIES = {
+    "Organizations": os.path.join(PROJECT_ROOT, "Organizations"),
     "Accounts": os.path.join(PROJECT_ROOT, "Accounts"),
     "Contacts": os.path.join(PROJECT_ROOT, "Contacts"),
     "Opportunities": os.path.join(PROJECT_ROOT, "Opportunities"),
@@ -44,6 +45,7 @@ DIRECTORIES = {
 
 PRIORITY_WEIGHTS = {"high": 3, "medium": 2, "low": 1}
 COMMIT_SCOPE_PREFIXES = [
+    "Organizations/",
     "Accounts/",
     "Contacts/",
     "Deal-Flow/",
@@ -124,6 +126,8 @@ def as_list(value):
 
 
 def entity_name(entity_type, frontmatter, basename):
+    if entity_type == "Organizations":
+        return frontmatter.get("organization-name", basename)
     if entity_type == "Accounts":
         return frontmatter.get("company-name", basename)
     if entity_type == "Contacts":
@@ -228,7 +232,8 @@ def related_note_links(note):
     return links
 
 
-def relationship_candidates(accounts, contacts, opportunities, tasks, activities, notes):
+def relationship_candidates(organizations, accounts, contacts, opportunities, tasks, activities, notes):
+    organization_index = build_index(organizations)
     account_index = build_index(accounts)
     contact_index = build_index(contacts)
     active_opportunities = [record for record in opportunities if record["frontmatter"].get("is-active", False)]
@@ -272,15 +277,27 @@ def relationship_candidates(accounts, contacts, opportunities, tasks, activities
 
         account_fm = account["frontmatter"] if account else {}
         contact_fm = contact["frontmatter"] if contact else {}
+        organization = organization_index.get(normalize_key(account_fm.get("organization"))) if account else None
+        organization_fm = organization["frontmatter"] if organization else {}
         warmth = max(
             as_int(contact_fm.get("warmth-score")),
             as_int(account_fm.get("account-warmth-index")),
             as_int(account_fm.get("warmth-score")),
         )
         velocity = max(as_int(contact_fm.get("velocity-score")), as_int(account_fm.get("velocity-score")), recent_activity_count)
-        priority = priority_label(fm.get("priority"), account_fm.get("priority"), contact_fm.get("priority"))
+        priority = priority_label(
+            fm.get("priority"),
+            account_fm.get("strategic-importance"),
+            account_fm.get("priority"),
+            contact_fm.get("priority"),
+        )
         probability = as_int(fm.get("probability"))
-        commercial_value = max(as_int(fm.get("deal-value")), as_int(account_fm.get("size")))
+        commercial_value = max(
+            as_int(fm.get("commercial-value")),
+            as_int(fm.get("deal-value")),
+            as_int(account_fm.get("size")),
+            as_int(organization_fm.get("size")),
+        )
         days_since = (today - latest_activity).days if latest_activity else 999
         attention_score = (
             (100 - min(warmth, 100))
@@ -691,6 +708,7 @@ def main():
     args = parser.parse_args()
 
     accounts = collect_records("Accounts")
+    organizations = collect_records("Organizations")
     contacts = collect_records("Contacts")
     opportunities = collect_records("Opportunities")
     leads = collect_records("Leads")
@@ -698,7 +716,7 @@ def main():
     activities = collect_records("Activities")
     notes = collect_records("Notes")
 
-    relationships = relationship_candidates(accounts, contacts, opportunities, tasks, activities, notes)
+    relationships = relationship_candidates(organizations, accounts, contacts, opportunities, tasks, activities, notes)
     qualified_leads = lead_candidates(leads, activities, notes, tasks)
 
     sections = {

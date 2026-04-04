@@ -90,7 +90,7 @@ CRM_DATA_PATH=./crm-data python3 .gemini/skills/update-dashboard/scripts/update-
 Create a lead:
 
 ```bash
-python3 scripts/lead_manager.py create --name "Example Lead" --status new
+python3 .gemini/skills/crm-lead-manager/scripts/lead_manager.py create --name "Example Lead" --status new
 ```
 
 Process an Inbox item:
@@ -158,6 +158,7 @@ Legacy files may still exist in older filename shapes. Do not assume the whole v
 The most relevant skills for real use are:
 - `sync-workspace`
 - `update-dashboard`
+- `crm-lead-manager`
 - `create-organization`
 - `create-lead`
 - `create-inbox-item`
@@ -174,7 +175,7 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 - [sync-workspace.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/sync-workspace/scripts/sync-workspace.py#L1): Gmail/Calendar ingestion
 - [update-dashboard.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/update-dashboard/scripts/update-dashboard.py#L1): dashboard refresh and downstream generation
 - [organization_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/organization_manager.py#L1): organization creation
-- [lead_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/lead_manager.py#L1): lead lifecycle and conversion
+- [lead_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-lead-manager/scripts/lead_manager.py#L1): lead lifecycle and conversion
 - [inbox_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/inbox_manager.py#L1): Inbox creation and processing
 - [record_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/record_manager.py#L1): first-class Note and Activity creation
 - [relationship_memory.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/relationship_memory.py#L1): relationship memory assembly

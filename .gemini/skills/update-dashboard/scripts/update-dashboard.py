@@ -489,7 +489,9 @@ def build_qualified_leads_section(candidates):
     )
 
 
-def build_next_actions_section(tasks, opportunities, accounts, contacts):
+def build_next_actions_section(tasks, organizations, opportunities, accounts, contacts):
+    today = date.today()
+    organization_index = build_index(organizations)
     opportunity_index = build_index(opportunities)
     account_index = build_index(accounts)
     contact_index = build_index(contacts)
@@ -501,11 +503,26 @@ def build_next_actions_section(tasks, opportunities, accounts, contacts):
         opp = opportunity_index.get(normalize_key(fm.get("opportunity")))
         probability = as_int(opp["frontmatter"].get("probability")) if opp else 0
         priority = PRIORITY_WEIGHTS.get(str(fm.get("priority", "medium")).lower(), 2)
-        return (due_date, -priority, -probability)
+        if due_date != date.max:
+            if due_date < today:
+                urgency_bucket = 2
+                urgency_distance = (today - due_date).days
+            elif due_date <= today + timedelta(days=3):
+                urgency_bucket = 0
+                urgency_distance = (due_date - today).days
+            elif due_date <= today + timedelta(days=7):
+                urgency_bucket = 1
+                urgency_distance = (due_date - today).days
+            else:
+                urgency_bucket = 3
+                urgency_distance = (due_date - today).days
+        else:
+            urgency_bucket = 4
+            urgency_distance = 999
+        return (urgency_bucket, urgency_distance, -priority, -probability)
 
-    ranked = sorted(open_tasks, key=task_sort_key)[:12]
+    ranked = sorted(open_tasks, key=task_sort_key)[:15]
     rows = []
-    today = date.today()
     for task in ranked:
         fm = task["frontmatter"]
         due_date = as_date(fm.get("due-date"))
@@ -513,7 +530,11 @@ def build_next_actions_section(tasks, opportunities, accounts, contacts):
         if related:
             related_link = related["link"]
         else:
-            related = contact_index.get(normalize_key(fm.get("contact"))) or account_index.get(normalize_key(fm.get("account")))
+            related = (
+                contact_index.get(normalize_key(fm.get("contact")))
+                or account_index.get(normalize_key(fm.get("account")))
+                or organization_index.get(normalize_key(fm.get("account")))
+            )
             related_link = related["link"] if related else "N/A"
 
         if due_date and due_date < today:
@@ -724,7 +745,7 @@ def main():
         "attention": build_attention_section(relationships),
         "heating": build_heating_section(relationships),
         "qualified_leads": build_qualified_leads_section(qualified_leads),
-        "next_actions": build_next_actions_section(tasks, opportunities, accounts, contacts),
+        "next_actions": build_next_actions_section(tasks, organizations, opportunities, accounts, contacts),
         "pipeline": build_pipeline_section(opportunities),
         "recent_memory": build_recent_memory_section(activities, notes),
     }

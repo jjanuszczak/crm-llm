@@ -242,8 +242,9 @@ Be conservative.
 ## Important Scripts
 
 ### Core record creation and lifecycle
+- `.gemini/skills/crm-lead-manager/SKILL.md`
 - `scripts/organization_manager.py`
-- `scripts/lead_manager.py`
+- `.gemini/skills/crm-lead-manager/scripts/lead_manager.py`
 - `scripts/inbox_manager.py`
 - `scripts/record_manager.py`
 

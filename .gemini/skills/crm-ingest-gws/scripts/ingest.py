@@ -18,10 +18,15 @@ if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
 try:
-    from frontmatter_utils import dated_record_id, load_frontmatter_file, slugify
+    from frontmatter_utils import dated_record_id, iter_markdown_files, load_frontmatter_file, slugify
 except ImportError:
     def dated_record_id(event_date, title):
         return f"{event_date}-{re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')}"
+    def iter_markdown_files(directory):
+        for root, _, files in os.walk(directory):
+            for file_name in files:
+                if file_name.endswith(".md"):
+                    yield os.path.join(root, file_name)
     def load_frontmatter_file(path):
         return {}, ""
     def slugify(value):
@@ -319,11 +324,11 @@ def get_crm_index():
     index["tasks"] = {}
     tasks_dir = os.path.join(CRM_DATA_PATH, "Tasks")
     if os.path.exists(tasks_dir):
-        for f in os.listdir(tasks_dir):
-            if f.endswith(".md"):
-                fm, _ = load_frontmatter_file(os.path.join(tasks_dir, f))
-                if fm.get("status") == "todo":
-                    index["tasks"][f"[[Tasks/{f[:-3]}]]"] = fm
+        for task_path in iter_markdown_files(tasks_dir):
+            fm, _ = load_frontmatter_file(task_path)
+            if fm.get("status") == "todo":
+                rel_path = os.path.relpath(task_path, CRM_DATA_PATH)
+                index["tasks"][f"[[{os.path.splitext(rel_path)[0]}]]"] = fm
 
     opps_dir = os.path.join(CRM_DATA_PATH, "Opportunities")
     if os.path.exists(opps_dir):

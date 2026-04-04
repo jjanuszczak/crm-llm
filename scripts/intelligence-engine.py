@@ -3,7 +3,7 @@ import re
 import subprocess
 from datetime import datetime, date, timedelta
 
-from frontmatter_utils import load_frontmatter_file, write_frontmatter_file
+from frontmatter_utils import iter_markdown_files, load_frontmatter_file, write_frontmatter_file
 
 def get_crm_data_path():
     env_override = os.getenv("CRM_DATA_PATH")
@@ -114,13 +114,13 @@ def main():
     print("Running Intelligence Engine...")
     activities_data = []
     if os.path.exists(ACTIVITIES_DIR):
-        for f in os.listdir(ACTIVITIES_DIR):
-            if f.endswith(".md"):
-                try:
-                    fm, _ = load_frontmatter_file(os.path.join(ACTIVITIES_DIR, f))
-                    if fm:
-                        activities_data.append({'frontmatter': fm})
-                except: pass
+        for file_path in iter_markdown_files(ACTIVITIES_DIR):
+            try:
+                fm, _ = load_frontmatter_file(file_path)
+                if fm:
+                    activities_data.append({'frontmatter': fm})
+            except:
+                pass
 
     interactions_cache = load_json(INTERACTIONS_PATH, default={})
     at_risk = []

@@ -5,7 +5,14 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from frontmatter_utils import load_frontmatter_file, serialize_frontmatter, write_frontmatter_file
+from frontmatter_utils import (
+    bucketed_record_path,
+    frontmatter_date_value,
+    iter_markdown_files,
+    load_frontmatter_file,
+    serialize_frontmatter,
+    write_frontmatter_file,
+)
 
 
 VALID_STATUSES = {"new", "prospect", "engaged", "qualified", "converted", "disqualified"}
@@ -406,10 +413,8 @@ def copy_linked_records(directory, lead_link, source_type, new_primary_type, new
         return []
 
     copied = []
-    for file_name in os.listdir(directory):
-        if not file_name.endswith(".md"):
-            continue
-        file_path = os.path.join(directory, file_name)
+    for file_path in iter_markdown_files(directory):
+        file_name = os.path.basename(file_path)
         frontmatter, body = load_frontmatter_file(file_path)
         if not frontmatter:
             continue
@@ -436,7 +441,8 @@ def copy_linked_records(directory, lead_link, source_type, new_primary_type, new
         cloned["source-ref"] = frontmatter.get("source-ref") or lead_link
         cloned["date-modified"] = date.today().strftime("%Y-%m-%d")
         target_name = f"{base_name}-from-{slugify(extract_link_name(lead_link))}.md"
-        target_path = os.path.join(directory, target_name)
+        record_date = frontmatter_date_value(frontmatter, "date", "due-date", "date-created", "date-modified") or date.today().strftime("%Y-%m-%d")
+        target_path = bucketed_record_path(directory, record_date, target_name)
         write_frontmatter_file(target_path, cloned, body)
         copied.append(target_path)
 
@@ -448,10 +454,7 @@ def move_open_tasks(lead_link, account_link, contact_link, opportunity_link):
     if not os.path.exists(TASKS_DIR):
         return moved
 
-    for file_name in os.listdir(TASKS_DIR):
-        if not file_name.endswith(".md"):
-            continue
-        file_path = os.path.join(TASKS_DIR, file_name)
+    for file_path in iter_markdown_files(TASKS_DIR):
         frontmatter, body = load_frontmatter_file(file_path)
         if not frontmatter:
             continue

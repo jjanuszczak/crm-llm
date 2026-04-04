@@ -3,7 +3,17 @@ import os
 import sys
 from datetime import date
 
-from frontmatter_utils import dated_record_id, load_frontmatter_file, parse_markdown_frontmatter, serialize_frontmatter, slugify, write_frontmatter_file
+from frontmatter_utils import (
+    bucketed_record_path,
+    dated_record_id,
+    find_markdown_file,
+    frontmatter_date_value,
+    load_frontmatter_file,
+    parse_markdown_frontmatter,
+    serialize_frontmatter,
+    slugify,
+    write_frontmatter_file,
+)
 from lead_manager import get_crm_data_path, link_for
 
 
@@ -96,21 +106,23 @@ def update_status(path, status):
     write_frontmatter_file(path, frontmatter, body)
 
 
-def note_path(title):
-    return os.path.join(NOTES_DIR, f"{slugify(title)}.md")
+def note_path(title, note_date):
+    return bucketed_record_path(NOTES_DIR, note_date, f"{slugify(title)}.md")
 
 
-def activity_path(title):
-    activity_id = dated_record_id(date.today().strftime("%Y-%m-%d"), title)
-    return os.path.join(ACTIVITIES_DIR, f"{activity_id}.md")
+def activity_path(title, activity_date):
+    activity_id = dated_record_id(activity_date, title)
+    return bucketed_record_path(ACTIVITIES_DIR, activity_date, f"{activity_id}.md")
 
 
 def create_note_from_inbox(frontmatter, parent_type, parent_name):
     note_id = f"{frontmatter['id']}-note"
     title = frontmatter["title"]
-    file_path = note_path(title)
-    if os.path.exists(file_path):
-        return file_path
+    note_date = frontmatter_date_value(frontmatter, "captured-at", "date-created") or date.today().strftime("%Y-%m-%d")
+    existing_path = find_markdown_file(NOTES_DIR, slugify(title))
+    if existing_path:
+        return existing_path
+    file_path = note_path(title, note_date)
 
     rendered = render_template(
         NOTE_TEMPLATE_PATH,
@@ -123,7 +135,7 @@ def create_note_from_inbox(frontmatter, parent_type, parent_name):
             "Secondary Link 1": parent_name,
             "manual | inbox | gmail | calendar | ai-generated": "inbox",
             "Source Reference": frontmatter.get("id", ""),
-            "YYYY-MM-DD": date.today().strftime("%Y-%m-%d"),
+            "YYYY-MM-DD": note_date,
         },
     )
     note_frontmatter, note_body = parse_markdown_frontmatter(rendered)
@@ -135,10 +147,12 @@ def create_note_from_inbox(frontmatter, parent_type, parent_name):
 
 def create_activity_from_inbox(frontmatter, parent_type, parent_name):
     title = frontmatter["title"]
-    file_path = activity_path(title)
-    if os.path.exists(file_path):
-        return file_path
-    activity_id = dated_record_id(date.today().strftime("%Y-%m-%d"), title)
+    activity_date = frontmatter_date_value(frontmatter, "captured-at", "date-created") or date.today().strftime("%Y-%m-%d")
+    activity_id = dated_record_id(activity_date, title)
+    existing_path = find_markdown_file(ACTIVITIES_DIR, activity_id)
+    if existing_path:
+        return existing_path
+    file_path = activity_path(title, activity_date)
 
     rendered = render_template(
         ACTIVITY_TEMPLATE_PATH,
@@ -147,7 +161,7 @@ def create_activity_from_inbox(frontmatter, parent_type, parent_name):
             "Activity Name": title,
             "call | email | meeting | analysis | note-derived": "note-derived",
             "Owner": frontmatter.get("owner", "john"),
-            "YYYY-MM-DD": date.today().strftime("%Y-%m-%d"),
+            "YYYY-MM-DD": activity_date,
             "opportunity | contact | account | lead | deal": parent_type,
             "Primary Parent": parent_name,
             "Secondary Link 1": parent_name,
@@ -167,12 +181,12 @@ def create_activity_from_inbox(frontmatter, parent_type, parent_name):
 
 def create_task_from_inbox(frontmatter, opportunity_name=""):
     title = frontmatter["title"]
-    task_id = dated_record_id(date.today().strftime("%Y-%m-%d"), title)
-    file_path = os.path.join(TASKS_DIR, f"{task_id}.md")
-    if os.path.exists(file_path):
-        return file_path
-
     today = date.today().strftime("%Y-%m-%d")
+    task_id = dated_record_id(today, title)
+    existing_path = find_markdown_file(TASKS_DIR, task_id)
+    if existing_path:
+        return existing_path
+    file_path = bucketed_record_path(TASKS_DIR, today, f"{task_id}.md")
     opportunity_link = link_for("Opportunities", slugify(opportunity_name)) if opportunity_name else ""
     content = (
         "---\n"

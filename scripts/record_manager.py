@@ -3,7 +3,14 @@ import os
 import sys
 from datetime import date
 
-from frontmatter_utils import dated_record_id, parse_markdown_frontmatter, slugify, write_frontmatter_file
+from frontmatter_utils import (
+    bucketed_record_path,
+    dated_record_id,
+    find_markdown_file,
+    parse_markdown_frontmatter,
+    slugify,
+    write_frontmatter_file,
+)
 from lead_manager import get_crm_data_path
 
 
@@ -51,11 +58,11 @@ def create_note(args):
         raise ValueError(f"Invalid primary-parent-type '{args.primary_parent_type}'.")
 
     note_id = slugify(args.title)
-    file_path = os.path.join(NOTES_DIR, f"{note_id}.md")
-    if os.path.exists(file_path):
-        raise FileExistsError(f"Note already exists: {file_path}")
-
     today = date.today().strftime("%Y-%m-%d")
+    existing_path = find_markdown_file(NOTES_DIR, note_id)
+    if existing_path:
+        raise FileExistsError(f"Note already exists: {existing_path}")
+    file_path = bucketed_record_path(NOTES_DIR, today, f"{note_id}.md")
     rendered = render_template(
         NOTE_TEMPLATE_PATH,
         {
@@ -90,9 +97,10 @@ def create_activity(args):
 
     activity_date = args.date or date.today().strftime("%Y-%m-%d")
     activity_id = dated_record_id(activity_date, args.title)
-    file_path = os.path.join(ACTIVITIES_DIR, f"{activity_id}.md")
-    if os.path.exists(file_path):
-        raise FileExistsError(f"Activity already exists: {file_path}")
+    existing_path = find_markdown_file(ACTIVITIES_DIR, activity_id)
+    if existing_path:
+        raise FileExistsError(f"Activity already exists: {existing_path}")
+    file_path = bucketed_record_path(ACTIVITIES_DIR, activity_date, f"{activity_id}.md")
 
     today = date.today().strftime("%Y-%m-%d")
     rendered = render_template(

@@ -1,3 +1,4 @@
+import os
 import re
 from datetime import date, datetime
 
@@ -39,6 +40,9 @@ def load_frontmatter_file(file_path):
 
 def write_frontmatter_file(file_path, frontmatter, body):
     serialized = serialize_frontmatter(frontmatter)
+    parent_dir = os.path.dirname(file_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
     with open(file_path, "w", encoding="utf-8") as handle:
         handle.write(serialized + body)
 
@@ -59,6 +63,46 @@ def serialize_frontmatter(frontmatter):
         lines.extend(_serialize_key_value(key, value))
     lines.append("---")
     return "\n".join(lines) + "\n"
+
+
+def iter_markdown_files(directory):
+    if not os.path.exists(directory):
+        return
+    for root, _, files in os.walk(directory):
+        for file_name in sorted(files):
+            if file_name.endswith(".md"):
+                yield os.path.join(root, file_name)
+
+
+def find_markdown_file(directory, stem):
+    target_name = f"{stem}.md"
+    for file_path in iter_markdown_files(directory):
+        if os.path.basename(file_path) == target_name:
+            return file_path
+    return None
+
+
+def frontmatter_date_value(frontmatter, *keys):
+    for key in keys:
+        value = frontmatter.get(key)
+        if value in (None, "", []):
+            continue
+        normalized = _coerce_date_string(value)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
+            return normalized
+    return ""
+
+
+def bucketed_record_dir(base_dir, record_date):
+    normalized_date = _coerce_date_string(record_date)
+    match = re.fullmatch(r"(\d{4})-(\d{2})-\d{2}", normalized_date)
+    if not match:
+        return base_dir
+    return os.path.join(base_dir, match.group(1), match.group(2))
+
+
+def bucketed_record_path(base_dir, record_date, file_name):
+    return os.path.join(bucketed_record_dir(base_dir, record_date), file_name)
 
 
 def _parse_yaml(frontmatter_str):

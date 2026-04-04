@@ -14,7 +14,7 @@ SCRIPTS_DIR = os.path.join(LOGIC_ROOT, "scripts")
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
-from frontmatter_utils import dated_record_id, load_frontmatter_file
+from frontmatter_utils import bucketed_record_path, dated_record_id, iter_markdown_files, load_frontmatter_file
 
 
 def get_crm_data_path():
@@ -281,10 +281,7 @@ def existing_activity_refs():
     refs = set()
     if not os.path.exists(ACTIVITIES_DIR):
         return refs
-    for file_name in os.listdir(ACTIVITIES_DIR):
-        if not file_name.endswith(".md"):
-            continue
-        path = os.path.join(ACTIVITIES_DIR, file_name)
+    for path in iter_markdown_files(ACTIVITIES_DIR):
         frontmatter, _ = load_frontmatter_file(path)
         source_ref = frontmatter.get("source-ref")
         if source_ref:
@@ -396,7 +393,7 @@ def create_activity_file(
     ref_slug = slugify(str(source_ref))[:16]
     unique_title = f"{title} {ref_slug}" if ref_slug else title
     record_id = dated_record_id(event_date, unique_title)
-    file_path = os.path.join(ACTIVITIES_DIR, f"{record_id}.md")
+    file_path = bucketed_record_path(ACTIVITIES_DIR, event_date, f"{record_id}.md")
     if os.path.exists(file_path):
         return file_path
 

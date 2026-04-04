@@ -4,6 +4,15 @@ import json
 import subprocess
 from datetime import datetime
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOGIC_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../../../../"))
+SCRIPTS_DIR = os.path.join(LOGIC_ROOT, "scripts")
+
+if SCRIPTS_DIR not in os.sys.path:
+    os.sys.path.insert(0, SCRIPTS_DIR)
+
+from frontmatter_utils import iter_markdown_files
+
 def get_crm_data_path():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     logic_root = os.path.abspath(os.path.join(script_dir, "../../../../"))
@@ -33,19 +42,19 @@ def parse_frontmatter(content):
 
 def get_local_tasks(tasks_dir):
     tasks = []
-    if not os.path.exists(tasks_dir): return tasks
-    for file_name in os.listdir(tasks_dir):
-        if file_name.endswith(".md"):
-            with open(os.path.join(tasks_dir, file_name), 'r') as f:
-                content = f.read()
-                fm = parse_frontmatter(content)
-                tasks.append({
-                    'title': fm.get('task-name'),
-                    'due': fm.get('due-date'),
-                    'status': fm.get('status'),
-                    'file': file_name,
-                    'full_path': os.path.join(tasks_dir, file_name)
-                })
+    if not os.path.exists(tasks_dir):
+        return tasks
+    for file_path in iter_markdown_files(tasks_dir):
+        with open(file_path, 'r') as f:
+            content = f.read()
+            fm = parse_frontmatter(content)
+            tasks.append({
+                'title': fm.get('task-name'),
+                'due': fm.get('due-date'),
+                'status': fm.get('status'),
+                'file': os.path.basename(file_path),
+                'full_path': file_path
+            })
     return tasks
 
 def update_local_task_status(file_path, new_status):

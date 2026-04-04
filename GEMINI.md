@@ -218,6 +218,7 @@ Important staging files:
 Naming conventions:
 - Activities: `YYYY-MM-DD-<slug>.md`
 - Tasks: `YYYY-MM-DD-<slug>.md`
+- Activities, Tasks, and Notes are stored under `YYYY/MM/` subfolders inside their entity directories.
 
 ## Git And Safety Rules
 

@@ -139,6 +139,7 @@ Use `YYYY-MM-DD` dates everywhere.
 Current filename conventions:
 - new `Activities`: `YYYY-MM-DD-<slug>.md`
 - new generated `Tasks`: `YYYY-MM-DD-<slug>.md`
+- `Activities/`, `Tasks/`, and `Notes/` are bucketed under `YYYY/MM/`
 
 Legacy files may still exist in older filename shapes. Do not assume the whole vault is perfectly migrated.
 

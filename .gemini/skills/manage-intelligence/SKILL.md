@@ -21,7 +21,7 @@ Manage staged discoveries and intelligence outputs in the v4 memory system.
 2.  **approve-discovery [name]:**
     *   Load `discovery.json`.
     *   Find the entry matching the name.
-    *   Use the appropriate `create-account` or `create-contact` skill with the data from the discovery entry (name, email, rationale).
+    *   Use the appropriate `crm-create-account` or `crm-create-contact` skill with the data from the discovery entry (name, email, rationale).
     *   Remove the entry from `discovery.json`.
     *   Run `update-dashboard`.
 

@@ -372,17 +372,17 @@ The skill should follow repo-wide rules:
 
 ### Reuses
 
-- `create-opportunity`
-- `create-task`
-- `create-activity`
-- `create-note`
+- `crm-create-opportunity`
+- `crm-create-task`
+- `crm-create-activity`
+- `crm-create-note`
 - `update-dashboard`
 
 ### Supersedes as top-level abstraction
 
 Over time, this skill should reduce direct top-level reliance on:
 
-- raw `create-opportunity`
+- raw `crm-create-opportunity`
 - ad hoc manual opportunity edits
 
 Those should become sub-workflow helpers inside an opportunity-centered operator flow.

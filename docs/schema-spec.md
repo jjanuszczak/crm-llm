@@ -258,7 +258,7 @@ Explicit next actions.
 | :--- | :--- | :--- |
 | `id` | Canonical | Stable machine id |
 | `task-name` | Canonical | Display name |
-| `status` | Canonical | `todo`, `in-progress`, `blocked`, `done`, `canceled` |
+| `status` | Canonical | Live operating model currently uses `todo`, `waiting`, and `completed`, while older records may still contain `in-progress`, `blocked`, `done`, or `canceled` |
 | `priority` | Canonical | Execution priority |
 | `owner` | Canonical | Record owner |
 | `due-date` | Canonical | Due date |

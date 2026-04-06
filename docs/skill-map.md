@@ -222,12 +222,17 @@ Proposed sub-workflows:
 These are narrower skills that may remain standalone utilities or become sub-workflows behind top-level skills.
 
 ### Record Creation Skills
-- `create-activity`
-- `create-task`
-- `create-note`
-- `create-lead`
-- `create-organization`
-- `create-inbox-item`
+- `crm-create-account`
+- `crm-create-activity`
+- `crm-create-contact`
+- `crm-create-deal`
+- `crm-create-daily-report`
+- `crm-create-opportunity`
+- `crm-create-task`
+- `crm-create-note`
+- `crm-create-lead`
+- `crm-create-organization`
+- `crm-create-inbox-item`
 
 Role in the map:
 - mostly supporting sub-workflows
@@ -256,6 +261,7 @@ Role in the map:
 - `crm-task-manager`
 
 ### Relationship Operations Layer
+- `crm-daily-processing`
 - `crm-relationship-review`
 - `crm-memory-manager`
 
@@ -278,6 +284,7 @@ A top-level skill should own:
 
 Example:
 - `crm-lead-manager` should own “what stage is this relationship in and how should it convert?”
+- `crm-daily-processing` should own “what is the full daily operating loop, what changed since last review, and what must be updated with the user still in the loop?”
 - it should call or embed narrower record-creation steps rather than forcing the user to think in raw file operations
 
 ### Sub-workflow boundary

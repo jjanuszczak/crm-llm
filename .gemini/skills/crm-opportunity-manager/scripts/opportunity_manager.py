@@ -32,7 +32,7 @@ VALID_OPPORTUNITY_TYPES = {"advisory", "consulting", "financing", "hiring", "par
 RECOMMENDED_STAGES = {"discovery", "qualified", "proposal", "negotiation", "closed-won", "closed-lost"}
 VALID_ACTIVITY_TYPES = {"call", "email", "meeting", "analysis", "note-derived"}
 VALID_ACTIVITY_STATUSES = {"completed", "scheduled", "cancelled"}
-VALID_TASK_STATUSES = {"todo", "in-progress", "blocked", "done", "canceled"}
+VALID_TASK_STATUSES = {"todo", "waiting", "completed", "in-progress", "blocked", "done", "canceled"}
 VALID_TASK_PRIORITIES = {"high", "medium", "low"}
 
 CRM_DATA_PATH = get_crm_data_path()
@@ -845,7 +845,7 @@ def cmd_review(args):
     activities = gather_related_records(ACTIVITIES_DIR, opportunity_link)
     notes = gather_related_records(NOTES_DIR, opportunity_link)
 
-    open_tasks = [item for item in tasks if item[1].get("status") not in {"done", "canceled"}]
+    open_tasks = [item for item in tasks if item[1].get("status") not in {"done", "completed", "canceled"}]
     recent_activity_dates = sorted(
         [
             frontmatter_date_value(activity_frontmatter, "date", "date-modified", "date-created")

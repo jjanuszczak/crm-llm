@@ -29,6 +29,13 @@ Before implementing or changing any mutation workflow, also read:
 6. `crm-data/index.md` if it exists
 7. `crm-data/log.md` if it exists
 
+Then internalize these current repo realities before making changes:
+- `crm-daily-processing` is the preferred top-level daily operating loop
+- `crm-data/index.md` and `crm-data/log.md` are part of the write contract, not optional extras
+- `Deal-Flow/` is still the live deal inventory path
+- `waiting` is a first-class task state and should be treated as reminder-driven review, not execution failure
+- a startup may legitimately appear in both `Deal-Flow/` and `Opportunities/`, but those records serve different purposes
+
 ## Core Mental Model
 
 Think in two layers:
@@ -80,10 +87,12 @@ The canonical schema is in `docs/schema-spec.md`. Use that file as the source of
 ### Opportunities
 - Concrete commercial or strategic engagements
 - This is the operational center of gravity when active work exists
+- Often represents John's potential or active mandate with a company or founder
 
 ### Deals
 - Fundraising inventory objects
 - Still stored under `Deal-Flow/` in the current vault, even though the conceptual entity name is `Deal`
+- Represents a company John may shop to investors even if there is no paid mandate yet
 
 ### Notes
 - Durable strategic or contextual memory
@@ -130,6 +139,12 @@ Important practical rules:
 - `opportunity-type` is canonical
 - Investor mandate and check-size do not belong on opportunities
 - Deal fundraising fields do not belong on opportunities
+
+### Deal vs Opportunity interpretation
+- `Deal` answers: "is this company in inventory and matchable to investors?"
+- `Opportunity` answers: "is there a possible or real commercial mandate for John here?"
+- It is correct to keep a company in `Deal-Flow/` while leaving the related `Opportunity` in `discovery`
+- Do not collapse the two just because both involve the same startup
 
 ### Contact model
 - `full-name` is canonical
@@ -188,6 +203,16 @@ The normal operator loop is:
 4. Create or update durable records
 5. Refresh dashboard and derived views
 
+The preferred top-level abstraction for this is the `crm-daily-processing` skill. It should also explicitly ask the user for material updates that happened outside Google Workspace or outside the CRM before considering the daily review complete.
+
+Current day-to-day pattern:
+1. Read `DASHBOARD.md`, `index.md`, and `log.md`
+2. Run Workspace ingest
+3. Ask the user for off-system updates from WhatsApp, calls, in-person meetings, and already-sent emails
+4. Reconcile `todo`, `waiting`, and stale tasks
+5. Update opportunities, leads, deals, and activities
+6. Refresh dashboard / index / log
+
 Derived outputs:
 - `crm-data/DASHBOARD.md`
 - `crm-data/INTELLIGENCE.md`
@@ -238,6 +263,11 @@ Naming conventions:
 - Tasks: `YYYY-MM-DD-<slug>.md`
 - Activities, Tasks, and Notes are stored under `YYYY/MM/` subfolders inside their entity directories.
 
+Live task semantics:
+- `todo`: John owes the next move
+- `waiting`: someone else owes the next move; set `due-date` to the next review date
+- `completed`: done or clearly superseded
+
 ## Git And Safety Rules
 
 Be conservative.
@@ -281,9 +311,14 @@ When reviewing PRs or script changes:
 ### Core record creation and lifecycle
 - `.gemini/skills/crm-lead-manager/SKILL.md`
 - `scripts/organization_manager.py`
+- `scripts/account_manager.py`
+- `scripts/contact_manager.py`
+- `scripts/deal_manager.py`
+- `scripts/task_manager.py`
 - `.gemini/skills/crm-lead-manager/scripts/lead_manager.py`
 - `scripts/inbox_manager.py`
 - `scripts/record_manager.py`
+- `.gemini/skills/crm-opportunity-manager/scripts/opportunity_manager.py`
 
 ### Derived views and intelligence
 - `.gemini/skills/update-dashboard/scripts/update-dashboard.py`
@@ -304,14 +339,20 @@ These migration scripts reflect real structural work already done. Use them as r
 ## Important Skills
 
 Most relevant Gemini skills:
+- `crm-daily-processing`
 - `crm-ingest-gws`
 - `update-dashboard`
-- `create-organization`
-- `create-lead`
-- `create-inbox-item`
-- `create-note`
-- `create-activity`
-- `create-task`
+- `crm-create-account`
+- `crm-create-contact`
+- `crm-create-deal`
+- `crm-create-organization`
+- `crm-create-lead`
+- `crm-create-inbox-item`
+- `crm-create-note`
+- `crm-create-activity`
+- `crm-create-task`
+- `crm-create-daily-report`
+- `crm-opportunity-manager`
 - `matchmaker`
 - `manage-intelligence`
 

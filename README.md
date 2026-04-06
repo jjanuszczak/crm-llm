@@ -19,6 +19,27 @@ This repo gives an agent or developer the machinery to:
 
 The current canonical schema lives in `docs/schema-spec.md`.
 
+## Start Here Fast
+
+If you are a new agent or developer and need to get productive quickly, read in this order:
+
+1. `docs/schema-spec.md`
+2. `GEMINI.md`
+3. `crm-data/DASHBOARD.md`
+4. `crm-data/index.md`
+5. `crm-data/log.md`
+
+Then adopt these current assumptions:
+- `crm-data/` is the system of record
+- `crm-daily-processing` is the preferred top-level daily workflow
+- `Deal-Flow/` is still the live deal inventory directory
+- `waiting` is a first-class task state and its `due-date` should usually mean the next review/check-back date
+- a company may exist both as a `Deal` and as an `Opportunity`, but those records mean different things
+
+Use this distinction:
+- `Deal`: a company / startup in inventory that can be matched to investors
+- `Opportunity`: a potential paid mandate, advisory engagement, or other commercial path for John
+
 ## Mental Model
 
 Think in two layers:
@@ -62,6 +83,9 @@ Important v4 rules:
 - Investor mandate and check-size stay on the organization side; fundraising stage and target raise stay on `Deal`.
 - `commercial-value` is canonical on Opportunities; `deal-value` is compatibility-only.
 - The default home view is relationship-first, not chronology-first.
+- `Deal` and `Opportunity` are intentionally separate:
+  - use `Deal` for investor-shop inventory
+  - use `Opportunity` for John's possible or active mandate with that company
 
 ## Quick Start
 
@@ -129,9 +153,45 @@ Rebuild the CRM index manually:
 python3 scripts/navigation_manager.py rebuild-index
 ```
 
+Create an Account linked to an Organization:
+
+```bash
+python3 scripts/account_manager.py create --organization "Organizations/Example-Capital" --relationship-stage prospect --strategic-importance medium
+```
+
+Create a Contact linked to an Account:
+
+```bash
+python3 scripts/contact_manager.py create --name "Jane Doe" --account "Accounts/Example-Capital" --email "jane@example.com"
+```
+
+Create a Deal in the live `Deal-Flow/` inventory:
+
+```bash
+python3 scripts/deal_manager.py create --name "Example Startup" --fundraising-stage "Series A" --coverage-status active
+```
+
+Create or update a Task with the live status model:
+
+```bash
+python3 scripts/task_manager.py create --name "Follow up with Jane" --due-date 2026-04-10 --primary-parent-type opportunity --primary-parent "Opportunities/Example"
+python3 scripts/task_manager.py set-status "Tasks/2026/04/2026-04-10-follow-up-with-jane.md" --status waiting --review-date 2026-04-13
+python3 scripts/task_manager.py set-status "Tasks/2026/04/2026-04-10-follow-up-with-jane.md" --status completed
+```
+
 ## Day-To-Day Operating Loop
 
-For a new operator or agent, the normal loop is:
+For a new operator or agent, the normal loop is now best treated as the top-level skill `crm-daily-processing`.
+
+That workflow should:
+- run Workspace ingest
+- review staged suggestions
+- ask the user for off-system updates from WhatsApp, in-person meetings, calls, and other uncaptured channels
+- reconcile `todo`, `waiting`, and stale tasks
+- review live opportunities and leads
+- refresh the dashboard and derived views
+
+At a lower level, the manual sequence is:
 
 1. Run Workspace sync.
 2. Review `crm-data/staging/activity_updates.json`.
@@ -182,19 +242,36 @@ Legacy files may still exist in older filename shapes. Do not assume the whole v
 - For Gmail and Calendar ingestion, do not create meaningful records from subject lines alone.
 - `crm-data` may be a nested git repo or ignored locally. Check before assuming normal git behavior.
 
+Current execution rules:
+- `todo`: you owe the next move
+- `waiting`: someone else owes the next move
+- `completed`: done or clearly superseded
+- when moving a task to `waiting`, update `due-date` to the next review date
+- for company fundraising work, decide explicitly whether you are recording a `Deal`, an `Opportunity`, or both
+
+Preferred current write surface:
+- use the manager CLIs for `Organization`, `Account`, `Contact`, `Deal`, `Task`, `Lead`, and `Opportunity` lifecycle work
+- use `record_manager.py` for first-class `Activity` and `Note` creation
+- use `inbox_manager.py` for raw capture processing
+
 ## Key Skills
 
 The most relevant skills for real use are:
+- `crm-daily-processing`
 - `crm-ingest-gws`
 - `update-dashboard`
 - `crm-lead-manager`
 - `crm-opportunity-manager`
-- `create-organization`
-- `create-lead`
-- `create-inbox-item`
-- `create-note`
-- `create-activity`
-- `create-task`
+- `crm-create-account`
+- `crm-create-contact`
+- `crm-create-deal`
+- `crm-create-daily-report`
+- `crm-create-organization`
+- `crm-create-lead`
+- `crm-create-inbox-item`
+- `crm-create-note`
+- `crm-create-activity`
+- `crm-create-task`
 - `matchmaker`
 - `manage-intelligence`
 
@@ -205,8 +282,12 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 - [ingest.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-ingest-gws/scripts/ingest.py#L1): Gmail/Calendar ingestion and staged CRM decisioning
 - [update-dashboard.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/update-dashboard/scripts/update-dashboard.py#L1): dashboard refresh and downstream generation
 - [organization_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/organization_manager.py#L1): organization creation
+- [account_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/account_manager.py#L1): account creation and update
+- [contact_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/contact_manager.py#L1): contact creation and update
+- [deal_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/deal_manager.py#L1): deal inventory creation and update
 - [lead_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-lead-manager/scripts/lead_manager.py#L1): lead lifecycle and conversion
 - [opportunity_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-opportunity-manager/scripts/opportunity_manager.py#L1): opportunity lifecycle and execution workflows
+- [task_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/task_manager.py#L1): task creation, update, and status management
 - [inbox_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/inbox_manager.py#L1): Inbox creation and processing
 - [navigation_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/navigation_manager.py#L1): vault root `index.md` generation and `log.md` appends
 - [record_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/record_manager.py#L1): first-class Note and Activity creation

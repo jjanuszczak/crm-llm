@@ -15,6 +15,7 @@ from frontmatter_utils import (
     write_frontmatter_file,
 )
 from lead_manager import get_crm_data_path, link_for
+from navigation_manager import append_log_entry, rebuild_index, record_mutation
 
 
 VALID_STATUSES = {"new", "processing", "processed", "ignored"}
@@ -94,6 +95,15 @@ def create_inbox_item(args):
         body = body.replace("{{Optional AI or user notes about how this should be triaged.}}", args.processing_notes)
 
     write_frontmatter_file(file_path, frontmatter, body)
+    record_mutation(
+        action="create",
+        entity_type="Inbox",
+        title=args.title,
+        path=file_path,
+        source=args.source,
+        details="created inbox capture",
+        crm_data_path=CRM_DATA_PATH,
+    )
     print(file_path)
 
 
@@ -274,12 +284,29 @@ def process_inbox_item(args):
     if args.delete_processed:
         os.remove(path)
         print(f"deleted: {path}")
+        path_for_log = ""
+        details = f"deleted processed inbox item; outputs={','.join(record_type for record_type, _ in outputs)}"
     else:
         update_status(path, "processed")
         print(f"processed: {path}")
+        path_for_log = path
+        details = f"processed inbox item; outputs={','.join(record_type for record_type, _ in outputs)}"
 
     for record_type, output_path in outputs:
         print(f"{record_type}: {output_path}")
+
+    related = [output_path for _, output_path in outputs]
+    append_log_entry(
+        action="process",
+        entity_type="Inbox",
+        title=frontmatter.get("title", os.path.basename(path)),
+        path=path_for_log,
+        source=frontmatter.get("source", ""),
+        related=related,
+        details=details,
+        crm_data_path=CRM_DATA_PATH,
+    )
+    rebuild_index(CRM_DATA_PATH)
 
 
 def build_parser():

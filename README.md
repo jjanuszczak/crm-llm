@@ -27,6 +27,18 @@ Think in two layers:
 
 The vault is where the real work happens. The logic layer exists to read, write, enrich, and synthesize that vault.
 
+## Navigation Artifacts
+
+The vault root now maintains two navigation files for agents and operators:
+- `index.md`: a generated, content-oriented catalog of every CRM record grouped by entity type
+- `log.md`: an append-only chronological ledger of mutation workflows such as creates, conversions, inbox processing, and ingest runs
+
+Operating rules:
+- read `index.md` first when locating relevant CRM pages
+- treat `index.md` as derived state and rebuildable
+- treat `log.md` as append-only operational history
+- mutation workflows should update both automatically
+
 ## Current v4 Model
 
 The system is now a v4 memory system. The key record types are:
@@ -105,6 +117,18 @@ Create an Activity directly:
 python3 scripts/record_manager.py create-activity --title "Intro call with Jane" --activity-type meeting --date 2026-03-15 --primary-parent-type opportunity --primary-parent "Opportunities/Example"
 ```
 
+Create or review an Opportunity workflow:
+
+```bash
+python3 scripts/opportunity_manager.py review "Opportunities/Example"
+```
+
+Rebuild the CRM index manually:
+
+```bash
+python3 scripts/navigation_manager.py rebuild-index
+```
+
 ## Day-To-Day Operating Loop
 
 For a new operator or agent, the normal loop is:
@@ -120,6 +144,7 @@ If you only do one thing to get oriented in a live vault, read:
 - `crm-data/DASHBOARD.md`
 - `crm-data/INTELLIGENCE.md`
 - `crm-data/RELATIONSHIP_MEMORY.md`
+- `crm-data/index.md`
 
 ## Workspace Sync Behavior
 
@@ -137,6 +162,7 @@ That means:
 Use `YYYY-MM-DD` dates everywhere.
 
 Current filename conventions:
+- all CRM record filenames use hyphen-separated slugs; do not use spaces or punctuation in record filenames
 - new `Activities`: `YYYY-MM-DD-<slug>.md`
 - new generated `Tasks`: `YYYY-MM-DD-<slug>.md`
 - `Activities/`, `Tasks/`, and `Notes/` are bucketed under `YYYY/MM/`
@@ -147,6 +173,8 @@ Legacy files may still exist in older filename shapes. Do not assume the whole v
 
 - Always resolve `CRM_DATA_PATH` dynamically from `.env` or the environment.
 - Always use the templates in `templates/` for new records.
+- Treat `index.md` as generated state; rebuild it rather than editing it manually.
+- Treat `log.md` as append-only; do not rewrite old entries.
 - All wikilinks in YAML frontmatter must be quoted, for example:
   - `account: "[[Example Account]]"`
 - Prefer updating existing linked records over creating duplicates.
@@ -159,6 +187,7 @@ The most relevant skills for real use are:
 - `sync-workspace`
 - `update-dashboard`
 - `crm-lead-manager`
+- `crm-opportunity-manager`
 - `create-organization`
 - `create-lead`
 - `create-inbox-item`
@@ -176,7 +205,9 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 - [update-dashboard.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/update-dashboard/scripts/update-dashboard.py#L1): dashboard refresh and downstream generation
 - [organization_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/organization_manager.py#L1): organization creation
 - [lead_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-lead-manager/scripts/lead_manager.py#L1): lead lifecycle and conversion
+- [opportunity_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-opportunity-manager/scripts/opportunity_manager.py#L1): opportunity lifecycle and execution workflows
 - [inbox_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/inbox_manager.py#L1): Inbox creation and processing
+- [navigation_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/navigation_manager.py#L1): vault root `index.md` generation and `log.md` appends
 - [record_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/record_manager.py#L1): first-class Note and Activity creation
 - [relationship_memory.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/relationship_memory.py#L1): relationship memory assembly
 - [intelligence-engine.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/intelligence-engine.py#L1): telemetry and intelligence generation
@@ -207,3 +238,11 @@ Be aware of these realities:
 - GitHub MCP auth may be unreliable in this environment; `gh` CLI may be the fallback
 
 If you are new to the project, start with the dashboard, inspect one relationship end to end, then run Workspace sync and review staged proposals before making broader changes.
+
+## Agent Navigation Pattern
+
+When working inside a live vault:
+1. Read `index.md` at the vault root to find candidate records.
+2. Drill into the linked pages you actually need.
+3. Let mutation workflows append to `log.md`.
+4. Use `log.md` to understand what changed recently and which workflows have already run.

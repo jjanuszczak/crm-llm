@@ -24,6 +24,11 @@ If you are new to the project, read in this order:
 
 Then inspect the relevant `Organization`, `Account`, `Contact`, and `Opportunity` records for the relationship you are working on.
 
+Before implementing or changing any mutation workflow, also read:
+
+6. `crm-data/index.md` if it exists
+7. `crm-data/log.md` if it exists
+
 ## Core Mental Model
 
 Think in two layers:
@@ -171,6 +176,8 @@ Preferred primary-parent precedence:
 2. `Contact`
 3. `Account`
 
+For active commercial execution, prefer `crm-opportunity-manager` over raw record creation commands. Use lower-level create commands as sub-workflows, not the top-level operating abstraction.
+
 ## Operational Loop
 
 The normal operator loop is:
@@ -186,6 +193,8 @@ Derived outputs:
 - `crm-data/INTELLIGENCE.md`
 - `crm-data/RELATIONSHIP_MEMORY.md`
 - `crm-data/staging/matches.json`
+- `crm-data/index.md`
+- `crm-data/log.md`
 
 The home view is relationship-first, not timeline-first.
 
@@ -214,8 +223,11 @@ Important staging files:
 - Quote wikilinks in frontmatter
 - Preserve provenance fields when known
 - Prefer structured frontmatter over body prose when the system depends on a field
+- Treat `crm-data/index.md` as generated navigation state, not hand-authored content
+- Treat `crm-data/log.md` as append-only operational history
 
 Naming conventions:
+- All CRM record filenames should be hyphen-separated slugs. Do not introduce spaces or punctuation in record filenames.
 - Activities: `YYYY-MM-DD-<slug>.md`
 - Tasks: `YYYY-MM-DD-<slug>.md`
 - Activities, Tasks, and Notes are stored under `YYYY/MM/` subfolders inside their entity directories.
@@ -238,6 +250,25 @@ Be conservative.
 - Do not use `Notes` as raw scratch space
 - Do not run `scripts/index-notes.py` unless explicitly instructed
 - Improve consistency when touching a record, but do not silently rewrite unrelated data
+- Read `crm-data/index.md` first when you need to locate relevant records quickly
+- Use `crm-data/log.md` to understand recent mutation history before adding overlapping automation
+
+## Navigation And Mutation Contract
+
+`index.md` and `log.md` are part of the operational contract of the vault.
+
+When adding or changing functionality:
+- always consider whether the change introduces or alters a mutation workflow
+- if the workflow creates, updates, converts, processes, archives, or otherwise mutates durable CRM records, it must also consider `index.md` and `log.md`
+- new mutation workflows should update `crm-data/index.md` after successful writes
+- new mutation workflows should append a structured entry to `crm-data/log.md`
+- multi-record workflows should usually log once at the workflow level and rebuild `index.md` once after the workflow succeeds
+- read-only workflows should not append to `log.md`
+- if a change introduces a new record path convention, it must preserve the repo policy that record filenames are hyphen-separated slugs
+
+When reviewing PRs or script changes:
+- check whether any new writer path forgot to update navigation artifacts
+- treat missing `index.md` refreshes or missing `log.md` appends as integration gaps, not optional polish
 
 ## Important Scripts
 

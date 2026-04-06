@@ -5,6 +5,7 @@ from datetime import date
 
 from frontmatter_utils import parse_markdown_frontmatter, slugify, write_frontmatter_file
 from lead_manager import get_crm_data_path
+from navigation_manager import record_mutation
 
 
 LOGIC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
@@ -71,6 +72,15 @@ def create_organization(args):
     body = body.replace("{{Observed interaction history, signal quality, and contact surface area.}}", args.relationship_signals or "")
     body = body.replace("{{Stable facts worth preserving independent of any single opportunity.}}", args.strategic_notes or "")
     write_frontmatter_file(file_path, frontmatter, body)
+    record_mutation(
+        action="create",
+        entity_type="Organization",
+        title=args.name,
+        path=file_path,
+        source=args.source,
+        details=f"class={args.organization_class}",
+        crm_data_path=CRM_DATA_PATH,
+    )
     print(file_path)
 
 

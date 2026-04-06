@@ -12,6 +12,7 @@ from frontmatter_utils import (
     write_frontmatter_file,
 )
 from lead_manager import get_crm_data_path
+from navigation_manager import record_mutation
 
 
 LOGIC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
@@ -83,6 +84,16 @@ def create_note(args):
     body = body.replace("{{Implication 1}}", args.implication_1 or "")
     body = body.replace("{{Implication 2}}", args.implication_2 or "")
     write_frontmatter_file(file_path, frontmatter, body)
+    record_mutation(
+        action="create",
+        entity_type="Note",
+        title=args.title,
+        path=file_path,
+        source=args.source,
+        related=[args.primary_parent] + list(args.secondary_links or []),
+        details=f"primary-parent-type={args.primary_parent_type}",
+        crm_data_path=CRM_DATA_PATH,
+    )
     print(file_path)
 
 
@@ -129,6 +140,16 @@ def create_activity(args):
     body = body.replace("{{Comprehensive notes from the call, meeting, or analysis. Use bullet points for readability.}}", "")
     body = body.replace("{{How did the contact react? Enthusiastic, skeptical, neutral?}}", "")
     write_frontmatter_file(file_path, frontmatter, body)
+    record_mutation(
+        action="create",
+        entity_type="Activity",
+        title=args.title,
+        path=file_path,
+        source=args.source,
+        related=[args.primary_parent] + list(args.secondary_links or []),
+        details=f"activity-type={args.activity_type}; status={args.status}",
+        crm_data_path=CRM_DATA_PATH,
+    )
     print(file_path)
 
 

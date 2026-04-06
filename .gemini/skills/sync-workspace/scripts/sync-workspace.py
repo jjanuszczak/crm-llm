@@ -15,6 +15,7 @@ if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
 from frontmatter_utils import bucketed_record_path, dated_record_id, iter_markdown_files, load_frontmatter_file
+from navigation_manager import append_log_entry, rebuild_index
 
 
 def get_crm_data_path():
@@ -617,6 +618,21 @@ def main():
     save_json(WORKSPACE_UPDATES_PATH, proposals)
     save_json(INTERACTIONS_PATH, interactions)
     save_sync_state(until_iso, until_iso)
+    created_paths = [item["path"] for item in proposals if item.get("type") == "activity_created" and item.get("path")]
+    append_log_entry(
+        action="ingest",
+        entity_type="Workspace Sync",
+        title="Gmail and Calendar sync",
+        source="gmail,calendar",
+        details=(
+            f"mode={'autonomous' if args.autonomous else 'interactive'}; "
+            f"discoveries-added={len(discoveries)}; workspace-updates={len(proposals)}; "
+            f"activities-created={len(created_paths)}"
+        ),
+        crm_data_path=CRM_DATA_PATH,
+    )
+    if created_paths:
+        rebuild_index(CRM_DATA_PATH)
     print(
         json.dumps(
             {

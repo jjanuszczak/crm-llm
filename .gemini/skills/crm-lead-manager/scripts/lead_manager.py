@@ -20,6 +20,7 @@ from frontmatter_utils import (
     serialize_frontmatter,
     write_frontmatter_file,
 )
+from navigation_manager import append_log_entry, rebuild_index, record_mutation
 
 
 VALID_STATUSES = {"new", "prospect", "engaged", "qualified", "converted", "disqualified"}
@@ -229,6 +230,15 @@ def cmd_create(args):
             os.remove(file_path)
         raise
 
+    record_mutation(
+        action="create",
+        entity_type="Lead",
+        title=args.name,
+        path=file_path,
+        source=args.lead_source,
+        details=f"status={args.status}; priority={args.priority}",
+        crm_data_path=CRM_DATA_PATH,
+    )
     print(file_path)
 
 
@@ -255,7 +265,17 @@ def set_status(file_path, target_status):
 
 def cmd_set_status(args):
     file_path = find_lead_path(args.lead)
+    frontmatter, _ = load_frontmatter_file(file_path)
     set_status(file_path, args.status)
+    record_mutation(
+        action="update",
+        entity_type="Lead",
+        title=frontmatter.get("lead-name", os.path.splitext(os.path.basename(file_path))[0]),
+        path=file_path,
+        source=frontmatter.get("lead-source", ""),
+        details=f"set status to {args.status}",
+        crm_data_path=CRM_DATA_PATH,
+    )
     print(file_path)
 
 
@@ -269,6 +289,15 @@ def cmd_revive(args):
     frontmatter["status"] = target_status
     frontmatter["date-modified"] = date.today().strftime("%Y-%m-%d")
     write_frontmatter_file(file_path, frontmatter, body)
+    record_mutation(
+        action="update",
+        entity_type="Lead",
+        title=frontmatter.get("lead-name", os.path.splitext(os.path.basename(file_path))[0]),
+        path=file_path,
+        source=frontmatter.get("lead-source", ""),
+        details=f"revived to {target_status}",
+        crm_data_path=CRM_DATA_PATH,
+    )
     print(file_path)
 
 
@@ -618,6 +647,26 @@ def cmd_convert(args):
     frontmatter["converted-opportunities"] = [opportunity_link] if opportunity_link else []
     frontmatter["date-modified"] = date.today().strftime("%Y-%m-%d")
     archived_path = archive_converted_lead(file_path, frontmatter, body)
+
+    related = [organization_link, contact_link]
+    if account_link:
+        related.append(account_link)
+    if opportunity_link:
+        related.append(opportunity_link)
+    append_log_entry(
+        action="convert",
+        entity_type="Lead",
+        title=frontmatter.get("lead-name", os.path.splitext(os.path.basename(file_path))[0]),
+        path=archived_path,
+        source=frontmatter.get("lead-source", ""),
+        related=related,
+        details=(
+            f"mode={conversion_mode}; copied-notes={len(copied_notes)}; "
+            f"copied-activities={len(copied_activities)}; moved-tasks={len(moved_tasks)}"
+        ),
+        crm_data_path=CRM_DATA_PATH,
+    )
+    rebuild_index(CRM_DATA_PATH)
 
     print("conversion-mode:", conversion_mode)
     print("archived-lead:", archived_path)

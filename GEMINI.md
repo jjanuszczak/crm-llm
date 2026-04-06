@@ -210,6 +210,12 @@ Critical rules:
 - if `--since YYYY-MM-DD` is passed, treat that as an explicit backfill window
 
 Important staging files:
+- `crm-data/staging/activity_updates.json`
+- `crm-data/staging/contact_discoveries.json`
+- `crm-data/staging/lead_decisions.json`
+- `crm-data/staging/opportunity_suggestions.json`
+- `crm-data/staging/task_suggestions.json`
+- `crm-data/staging/ingestion_audit.json`
 - `crm-data/staging/workspace_updates.json`
 - `crm-data/staging/discovery.json`
 - `crm-data/staging/interactions.json`
@@ -286,7 +292,7 @@ When reviewing PRs or script changes:
 - `scripts/matchmaker.py`
 
 ### Workspace sync
-- `.gemini/skills/sync-workspace/scripts/sync-workspace.py`
+- `.gemini/skills/crm-ingest-gws/scripts/ingest.py`
 
 ### Recent migration helpers
 - `scripts/migrate_accounts_to_organizations.py`
@@ -298,7 +304,7 @@ These migration scripts reflect real structural work already done. Use them as r
 ## Important Skills
 
 Most relevant Gemini skills:
-- `sync-workspace`
+- `crm-ingest-gws`
 - `update-dashboard`
 - `create-organization`
 - `create-lead`

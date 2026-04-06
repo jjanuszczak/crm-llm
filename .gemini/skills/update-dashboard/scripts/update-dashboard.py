@@ -44,6 +44,8 @@ DIRECTORIES = {
 }
 
 PRIORITY_WEIGHTS = {"high": 3, "medium": 2, "low": 1}
+ACTIONABLE_TASK_STATUSES = {"todo", "in-progress"}
+WAITING_TASK_STATUSES = {"waiting"}
 COMMIT_SCOPE_PREFIXES = [
     "Organizations/",
     "Accounts/",
@@ -255,7 +257,7 @@ def relationship_candidates(organizations, accounts, contacts, opportunities, ta
         linked_activities = [activity for activity in activities if related_activity_links(activity) & linked_keys]
         linked_notes = [note for note in notes if related_note_links(note) & linked_keys]
 
-        open_tasks = [task for task in linked_tasks if task["frontmatter"].get("status") in {"todo", "in-progress"}]
+        open_tasks = [task for task in linked_tasks if task["frontmatter"].get("status") in ACTIONABLE_TASK_STATUSES]
         today = date.today()
         overdue_tasks = [
             task for task in open_tasks if (as_date(task["frontmatter"].get("due-date")) and as_date(task["frontmatter"].get("due-date")) < today)
@@ -375,7 +377,7 @@ def lead_candidates(leads, activities, notes, tasks):
                 "lead": lead,
                 "priority": priority,
                 "latest_signal": latest_signal,
-                "open_tasks": [task for task in linked_tasks if task["frontmatter"].get("status") in {"todo", "in-progress"}],
+                "open_tasks": [task for task in linked_tasks if task["frontmatter"].get("status") in ACTIONABLE_TASK_STATUSES],
                 "activity_count": len(linked_activities),
                 "note_count": len(linked_notes),
                 "score": score,
@@ -495,7 +497,7 @@ def build_next_actions_section(tasks, organizations, opportunities, accounts, co
     opportunity_index = build_index(opportunities)
     account_index = build_index(accounts)
     contact_index = build_index(contacts)
-    open_tasks = [task for task in tasks if task["frontmatter"].get("status") in {"todo", "in-progress"}]
+    open_tasks = [task for task in tasks if task["frontmatter"].get("status") in ACTIONABLE_TASK_STATUSES]
 
     def task_sort_key(task):
         fm = task["frontmatter"]
@@ -554,6 +556,71 @@ def build_next_actions_section(tasks, organizations, opportunities, accounts, co
             ]
         )
     return render_table(["Task", "Due", "Priority", "Related", "Why Now"], rows, "No open tasks found.")
+
+
+def build_waiting_section(tasks, organizations, opportunities, accounts, contacts):
+    today = date.today()
+    organization_index = build_index(organizations)
+    opportunity_index = build_index(opportunities)
+    account_index = build_index(accounts)
+    contact_index = build_index(contacts)
+    waiting_tasks = [task for task in tasks if task["frontmatter"].get("status") in WAITING_TASK_STATUSES]
+
+    def waiting_sort_key(task):
+        fm = task["frontmatter"]
+        reminder_date = as_date(fm.get("due-date")) or date.max
+        priority = PRIORITY_WEIGHTS.get(str(fm.get("priority", "medium")).lower(), 2)
+        if reminder_date != date.max:
+            if reminder_date < today:
+                reminder_bucket = 0
+                reminder_distance = (today - reminder_date).days
+            elif reminder_date <= today + timedelta(days=3):
+                reminder_bucket = 1
+                reminder_distance = (reminder_date - today).days
+            elif reminder_date <= today + timedelta(days=7):
+                reminder_bucket = 2
+                reminder_distance = (reminder_date - today).days
+            else:
+                reminder_bucket = 3
+                reminder_distance = (reminder_date - today).days
+        else:
+            reminder_bucket = 4
+            reminder_distance = 999
+        return (reminder_bucket, reminder_distance, -priority)
+
+    ranked = sorted(waiting_tasks, key=waiting_sort_key)[:15]
+    rows = []
+    for task in ranked:
+        fm = task["frontmatter"]
+        reminder_date = as_date(fm.get("due-date"))
+        related = opportunity_index.get(normalize_key(fm.get("opportunity")))
+        if related:
+            related_link = related["link"]
+        else:
+            related = (
+                contact_index.get(normalize_key(fm.get("contact")))
+                or account_index.get(normalize_key(fm.get("account")))
+                or organization_index.get(normalize_key(fm.get("account")))
+            )
+            related_link = related["link"] if related else "N/A"
+
+        if reminder_date and reminder_date < today:
+            reminder_state = "Review overdue"
+        elif reminder_date and reminder_date <= today + timedelta(days=3):
+            reminder_state = "Check back within 3d"
+        else:
+            reminder_state = "Monitoring"
+
+        rows.append(
+            [
+                task["link"],
+                format_date(reminder_date),
+                format_priority(fm.get("priority")),
+                related_link,
+                reminder_state,
+            ]
+        )
+    return render_table(["Task", "Review On", "Priority", "Related", "Status"], rows, "No waiting or monitoring tasks found.")
 
 
 def build_pipeline_section(opportunities):
@@ -615,10 +682,18 @@ def build_summary_bullets(attention, heating, qualified, tasks):
             f"Top near-conversion lead: {top['lead']['link']} "
             f"(latest signal {format_date(top['latest_signal'])}, {len(top['open_tasks'])} open task(s))."
         )
-    open_tasks = [task for task in tasks if task["frontmatter"].get("status") in {"todo", "in-progress"}]
+    open_tasks = [task for task in tasks if task["frontmatter"].get("status") in ACTIONABLE_TASK_STATUSES]
     overdue = [task for task in open_tasks if (as_date(task["frontmatter"].get("due-date")) and as_date(task["frontmatter"].get("due-date")) < date.today())]
     if overdue:
         bullets.append(f"Execution pressure: {len(overdue)} overdue task(s) need cleanup.")
+    waiting_tasks = [task for task in tasks if task["frontmatter"].get("status") in WAITING_TASK_STATUSES]
+    waiting_due = [
+        task
+        for task in waiting_tasks
+        if (as_date(task["frontmatter"].get("due-date")) and as_date(task["frontmatter"].get("due-date")) <= date.today() + timedelta(days=3))
+    ]
+    if waiting_due:
+        bullets.append(f"Follow-up queue: {len(waiting_due)} waiting task(s) need review within 3 days.")
     return bullets or ["No high-signal relationship updates were generated from the current vault state."]
 
 
@@ -652,6 +727,10 @@ def generate_dashboard_content(sections):
             "## Recommended Next Actions",
             "",
             sections["next_actions"],
+            "",
+            "## Waiting / Monitor",
+            "",
+            sections["waiting"],
             "",
             "## Active Opportunities Snapshot",
             "",
@@ -746,6 +825,7 @@ def main():
         "heating": build_heating_section(relationships),
         "qualified_leads": build_qualified_leads_section(qualified_leads),
         "next_actions": build_next_actions_section(tasks, organizations, opportunities, accounts, contacts),
+        "waiting": build_waiting_section(tasks, organizations, opportunities, accounts, contacts),
         "pipeline": build_pipeline_section(opportunities),
         "recent_memory": build_recent_memory_section(activities, notes),
     }

@@ -234,7 +234,6 @@ Role in the map:
 - useful as direct utilities, but not the best top-level abstraction for daily CRM operations
 
 ### Sync / Utility Skills
-- `sync-workspace`
 - `sync-google-tasks`
 - `manage-intelligence`
 

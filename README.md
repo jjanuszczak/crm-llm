@@ -90,7 +90,7 @@ python3 .gemini/skills/init-crm-data/scripts/init-vault.py crm-data
 Sync Workspace:
 
 ```bash
-CRM_DATA_PATH=./crm-data python3 .gemini/skills/sync-workspace/scripts/sync-workspace.py
+CRM_DATA_PATH=./crm-data python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py
 ```
 
 Refresh dashboard and derived views:
@@ -134,11 +134,12 @@ python3 scripts/navigation_manager.py rebuild-index
 For a new operator or agent, the normal loop is:
 
 1. Run Workspace sync.
-2. Review `crm-data/staging/workspace_updates.json`.
-3. Review `crm-data/staging/discovery.json`.
-4. Process or create `Inbox/` items into durable records.
-5. Create or update `Leads`, `Activities`, `Notes`, and `Tasks` as needed.
-6. Run the dashboard refresh.
+2. Review `crm-data/staging/activity_updates.json`.
+3. Review `crm-data/staging/contact_discoveries.json` and `crm-data/staging/lead_decisions.json`.
+4. Review `crm-data/staging/opportunity_suggestions.json` and `crm-data/staging/task_suggestions.json`.
+5. Process or create `Inbox/` items into durable records.
+6. Create or update `Leads`, `Activities`, `Notes`, and `Tasks` as needed.
+7. Run the dashboard refresh.
 
 If you only do one thing to get oriented in a live vault, read:
 - `crm-data/DASHBOARD.md`
@@ -184,7 +185,7 @@ Legacy files may still exist in older filename shapes. Do not assume the whole v
 ## Key Skills
 
 The most relevant skills for real use are:
-- `sync-workspace`
+- `crm-ingest-gws`
 - `update-dashboard`
 - `crm-lead-manager`
 - `crm-opportunity-manager`
@@ -201,7 +202,7 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 
 ## Important Scripts
 
-- [sync-workspace.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/sync-workspace/scripts/sync-workspace.py#L1): Gmail/Calendar ingestion
+- [ingest.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-ingest-gws/scripts/ingest.py#L1): Gmail/Calendar ingestion and staged CRM decisioning
 - [update-dashboard.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/update-dashboard/scripts/update-dashboard.py#L1): dashboard refresh and downstream generation
 - [organization_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/organization_manager.py#L1): organization creation
 - [lead_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-lead-manager/scripts/lead_manager.py#L1): lead lifecycle and conversion

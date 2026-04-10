@@ -54,6 +54,7 @@ except ImportError:
 
 OWN_EMAILS = {
     "operator@example.com",
+    "operator-alt@example.com",
 }
 ACTIVITY_WRITE_STATUSES = {"todo", "in-progress"}
 PROFESSIONAL_KEYWORDS = (
@@ -72,6 +73,34 @@ PROFESSIONAL_KEYWORDS = (
     "introduc",
     "follow up",
     "next step",
+)
+
+NOISE_TEXT_PATTERNS = (
+    r"\bunsubscribe\b",
+    r"\bview in browser\b",
+    r"\bmanage preferences\b",
+    r"\bemail statement\b",
+    r"\bpassword protected\b",
+    r"\bsecurity threats?\b",
+    r"\bdear valued customer\b",
+    r"\bterms and conditions apply\b",
+    r"\bprivacy concerns\b",
+    r"\brelationship manager\b",
+    r"\bnewsletter\b",
+    r"\bmarket outlook\b",
+    r"\binternational benefits\b",
+    r"\bwealth market outlook\b",
+    r"\bnotification\b",
+    r"\baccount statement\b",
+    r"\bpodcasts?\b",
+)
+
+TASK_NOISE_PATTERNS = (
+    r"delete it immediately and notify",
+    r"unintended recipients are not authorized",
+    r"consider the environment when printing",
+    r"terms and conditions apply",
+    r"do not reply",
 )
 
 
@@ -128,10 +157,14 @@ def run_gws(args):
     try:
         result = subprocess.run(args, capture_output=True, text=True)
         if result.returncode != 0:
-            return {"error": result.stderr.strip() or result.stdout.strip()}
-        return json.loads(result.stdout or "{}")
+            error_text = result.stderr.strip() or result.stdout.strip() or "unknown gws error"
+            raise RuntimeError(error_text)
+        payload = json.loads(result.stdout or "{}")
+        if isinstance(payload, dict) and payload.get("error"):
+            raise RuntimeError(json.dumps(payload["error"], ensure_ascii=True))
+        return payload
     except Exception as exc:
-        return {"error": str(exc)}
+        raise RuntimeError(f"gws command failed for {' '.join(args)}: {exc}") from exc
 
 
 def normalize_link(value):
@@ -230,6 +263,19 @@ def domain_from_email(email):
     return email.split("@", 1)[1]
 
 
+def domain_matches(domain, candidates):
+    domain = str(domain or "").strip().lower()
+    if not domain:
+        return False
+    for candidate in candidates:
+        candidate = str(candidate or "").strip().lower()
+        if not candidate:
+            continue
+        if domain == candidate or domain.endswith(f".{candidate}"):
+            return True
+    return False
+
+
 def domain_from_url(url):
     try:
         parsed = urlparse(str(url or "").strip())
@@ -248,6 +294,17 @@ def professional_signal_count(text):
 def summarize_text(text, limit=400):
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
     return cleaned[:limit].strip()
+
+
+def looks_like_noise_message(event):
+    combined = " ".join(
+        [
+            str(event.get("subject_or_title", "")),
+            str(event.get("snippet", "")),
+            str(event.get("body_text", "")),
+        ]
+    ).lower()
+    return any(re.search(pattern, combined, re.I) for pattern in NOISE_TEXT_PATTERNS)
 
 
 def sort_timestamp(value):
@@ -278,6 +335,7 @@ class SourceHarvester:
 
     def get_calendar_events(self):
         time_min = self.since_dt.isoformat().replace("+00:00", "Z")
+        now = datetime.now(UTC)
         listing = run_gws(
             [
                 "gws",
@@ -290,6 +348,18 @@ class SourceHarvester:
         )
         events = []
         for item in listing.get("items", []):
+            start = item.get("start", {})
+            start_value = start.get("dateTime") or start.get("date")
+            if start_value:
+                try:
+                    if "T" in start_value:
+                        start_dt = datetime.fromisoformat(start_value.replace("Z", "+00:00"))
+                    else:
+                        start_dt = datetime.fromisoformat(f"{start_value}T00:00:00+00:00")
+                    if start_dt > now:
+                        continue
+                except Exception:
+                    pass
             updated = item.get("updated")
             if not updated:
                 events.append(item)
@@ -480,9 +550,9 @@ class EntityResolver:
             return "invalid"
         if email in OWN_EMAILS:
             return "self"
-        if domain in self.service_domains:
+        if domain_matches(domain, self.service_domains):
             return "service"
-        if domain in self.noise_domains or any(local.startswith(prefix) for prefix in self.noise_prefixes):
+        if domain_matches(domain, self.noise_domains) or any(local.startswith(prefix) for prefix in self.noise_prefixes):
             return "generic"
         return "professional"
 
@@ -615,7 +685,7 @@ class TaskAnalyzer:
         for pattern in patterns:
             for match in re.findall(pattern, text or "", re.I):
                 line = match.split("\n")[0].strip()
-                if 12 <= len(line) <= 220:
+                if 12 <= len(line) <= 220 and not any(re.search(pattern, line, re.I) for pattern in TASK_NOISE_PATTERNS):
                     items.append(line)
         unique = []
         for item in items:
@@ -857,6 +927,8 @@ def classify_unknown_participant(event, participant, anchor, anchor_resolutions,
                 linked = crm_index.linked_records.get(variant)
                 if linked:
                     anchor_domains.add(domain_from_url(linked["frontmatter"].get("url")))
+    if looks_like_noise_message(event):
+        return "ignore"
     if anchor_type == "lead":
         return "new_contact_for_existing_lead_context"
     if anchor_type in {"opportunity", "account", "organization", "contact"}:
@@ -1193,9 +1265,10 @@ def main():
                     )
                 )
 
-        for item in task_analyzer.extract_action_items(event.get("body_text", "")):
-            task_type = "committed_action" if task_analyzer.looks_owner_assigned(item) else "suggested_follow_up"
-            task_suggestions.append(build_task_suggestion(event, primary_anchor["record"]["link"] if primary_anchor else "", task_type, item))
+        if primary_anchor:
+            for item in task_analyzer.extract_action_items(event.get("body_text", "")):
+                task_type = "committed_action" if task_analyzer.looks_owner_assigned(item) else "suggested_follow_up"
+                task_suggestions.append(build_task_suggestion(event, primary_anchor["record"]["link"] if primary_anchor else "", task_type, item))
 
         for resolution in resolutions:
             participant = resolution["participant"]

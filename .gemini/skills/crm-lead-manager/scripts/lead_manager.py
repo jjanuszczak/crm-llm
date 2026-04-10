@@ -504,7 +504,7 @@ def move_open_tasks(lead_link, account_link="", contact_link="", opportunity_lin
             continue
 
         status = frontmatter.get("status")
-        if status not in {"todo", "in-progress"}:
+        if status not in {"todo", "in-progress", "waiting"}:
             continue
 
         linked_to_lead = same_link(frontmatter.get("lead"), lead_link)

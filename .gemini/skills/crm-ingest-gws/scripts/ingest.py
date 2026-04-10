@@ -52,11 +52,6 @@ except ImportError:
         return os.path.join(base_dir, file_name)
 
 
-OWN_EMAILS = {
-    "operator@example.com",
-    "operator-alt@example.com",
-    "operator-work@example.com",
-}
 ACTIVITY_WRITE_STATUSES = {"todo", "in-progress"}
 PROFESSIONAL_KEYWORDS = (
     "proposal",
@@ -119,6 +114,7 @@ def get_crm_data_path():
 
 
 CRM_DATA_PATH = get_crm_data_path()
+SETTINGS_PATH = os.path.join(CRM_DATA_PATH, "settings.json")
 STAGING_DIR = os.path.join(CRM_DATA_PATH, "staging")
 SYNC_STATE_PATH = os.path.join(STAGING_DIR, "workspace_sync_state.json")
 NOISE_DOMAINS_PATH = os.path.join(SCRIPTS_DIR, "noise_domains.json")
@@ -148,6 +144,37 @@ def load_json(path, default):
         except Exception:
             return default
     return default
+
+
+def load_settings():
+    settings = load_json(SETTINGS_PATH, {})
+    return settings if isinstance(settings, dict) else {}
+
+
+def resolve_own_emails():
+    settings = load_settings()
+    own_emails = set()
+
+    preferred_email = str(settings.get("preferred_email") or "").strip().lower()
+    if preferred_email:
+        own_emails.add(preferred_email)
+
+    for email in settings.get("self_emails", []) or []:
+        normalized = str(email or "").strip().lower()
+        if normalized:
+            own_emails.add(normalized)
+
+    if own_emails:
+        return own_emails
+
+    return {
+        "operator@example.com",
+        "operator-alt@example.com",
+        "operator-work@example.com",
+    }
+
+
+OWN_EMAILS = resolve_own_emails()
 
 
 def save_json(path, payload):

@@ -1,9 +1,11 @@
+import json
 import os
 import re
 import subprocess
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 
 from frontmatter_utils import iter_markdown_files, load_frontmatter_file, write_frontmatter_file
+
 
 def get_crm_data_path():
     env_override = os.getenv("CRM_DATA_PATH")
@@ -13,21 +15,23 @@ def get_crm_data_path():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     logic_root = os.path.abspath(os.path.join(script_dir, "../"))
     env_path = os.path.join(logic_root, ".env")
-    
+
     if os.path.exists(env_path):
-        with open(env_path, 'r') as f:
-            for line in f:
-                if line.startswith('CRM_DATA_PATH='):
-                    path = line.split('=', 1)[1].strip().strip('"').strip("'")
+        with open(env_path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("CRM_DATA_PATH="):
+                    path = line.split("=", 1)[1].strip().strip('"').strip("'")
                     if not os.path.isabs(path):
                         path = os.path.abspath(os.path.join(logic_root, path))
                     return path
     return os.getenv("CRM_DATA_PATH", os.getcwd())
 
+
 CRM_DATA_PATH = get_crm_data_path()
 ORGANIZATIONS_DIR = os.path.join(CRM_DATA_PATH, "Organizations")
 ACCOUNTS_DIR = os.path.join(CRM_DATA_PATH, "Accounts")
 CONTACTS_DIR = os.path.join(CRM_DATA_PATH, "Contacts")
+TASKS_DIR = os.path.join(CRM_DATA_PATH, "Tasks")
 ACTIVITIES_DIR = os.path.join(CRM_DATA_PATH, "Activities")
 STAGING_DIR = os.path.join(CRM_DATA_PATH, "staging")
 IGNORE_LIST_PATH = os.path.join(STAGING_DIR, "ignore_list.json")
@@ -40,55 +44,319 @@ RELATIONSHIP_MEMORY_SCRIPT = os.path.join(os.path.dirname(__file__), "relationsh
 DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deals")
 LEGACY_DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deal-Flow")
 
-PRIORITY_THRESHOLDS = {'high': 14, 'medium': 30, 'low': 90, 'default': 30}
+PRIORITY_THRESHOLDS = {"high": 14, "medium": 30, "low": 90, "default": 30}
+ACTIONABLE_TASK_STATUSES = {"todo", "in-progress"}
+WAITING_TASK_STATUSES = {"waiting"}
 
 
-def as_link_name(value):
-    if isinstance(value, list):
-        return ""
-    return str(value or "").replace("[[", "").replace("]]", "")
+def normalize_link(value):
+    text = str(value or "").strip()
+    if text.startswith("[[") and text.endswith("]]"):
+        text = text[2:-2]
+    return text.strip()
+
+
+def canonical_key(value):
+    return re.sub(r"[^a-z0-9]+", "", normalize_link(value).lower())
+
+
+def link_variants(value):
+    normalized = normalize_link(value)
+    if not normalized:
+        return set()
+    variants = {normalized.lower()}
+    if "/" in normalized:
+        variants.add(normalized.split("/")[-1].lower())
+    canonical = canonical_key(normalized)
+    if canonical:
+        variants.add(canonical)
+    return variants
+
+
+def wikilink_for_path(file_path):
+    rel_path = os.path.relpath(file_path, CRM_DATA_PATH)
+    return f"[[{os.path.splitext(rel_path)[0]}]]"
+
+
+def entity_basename(file_path):
+    return os.path.splitext(os.path.basename(file_path))[0]
+
+
+def display_name(file_path, frontmatter):
+    return (
+        frontmatter.get("organization-name")
+        or frontmatter.get("company-name")
+        or frontmatter.get("full-name")
+        or frontmatter.get("full--name")
+        or frontmatter.get("opportunity-name")
+        or frontmatter.get("lead-name")
+        or frontmatter.get("activity-name")
+        or frontmatter.get("task-name")
+        or frontmatter.get("title")
+        or entity_basename(file_path)
+    )
+
 
 def load_json(file_path, default=None):
-    if default is None: default = []
+    if default is None:
+        default = []
     if os.path.exists(file_path):
         try:
-            import json
-            with open(file_path, 'r') as f: return json.load(f)
-        except: return default
+            with open(file_path, "r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except Exception:
+            return default
     return default
+
 
 def update_frontmatter(file_path, new_data):
     try:
-        fm, body = load_frontmatter_file(file_path)
-    except:
+        frontmatter, body = load_frontmatter_file(file_path)
+    except Exception:
         return
-    fm.update(new_data)
-    write_frontmatter_file(file_path, fm, body)
+    frontmatter.update(new_data)
+    write_frontmatter_file(file_path, frontmatter, body)
 
-def get_latest_interaction_date(entity_name, entity_email, activities_data, interactions_cache):
-    latest_date = date(2000, 1, 1)
-    if entity_email and interactions_cache and entity_email in interactions_cache:
+
+def parse_date(value):
+    if isinstance(value, date):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def bounded_date(value):
+    parsed = parse_date(value)
+    if not parsed:
+        return None
+    return min(parsed, date.today())
+
+
+def activity_date(frontmatter):
+    return bounded_date(frontmatter.get("activity-date") or frontmatter.get("date"))
+
+
+def task_due_date(frontmatter):
+    return bounded_date(frontmatter.get("due-date"))
+
+
+def collect_records(directory):
+    records = []
+    if not os.path.exists(directory):
+        return records
+    for file_path in iter_markdown_files(directory):
         try:
-            telemetry_date_str = interactions_cache[entity_email].get('last_date')
-            if telemetry_date_str:
-                telemetry_date = datetime.strptime(telemetry_date_str, '%Y-%m-%d').date()
-                if telemetry_date > latest_date: latest_date = telemetry_date
-        except: pass
-    variants = [entity_name, entity_name.replace('-', ' '), entity_name.replace(' ', '-')]
-    for act in activities_data:
-        fm_str = str(act['frontmatter'])
-        act_date_str = act['frontmatter'].get('activity-date') or act['frontmatter'].get('date')
-        if not act_date_str: continue
-        try: act_date = datetime.strptime(act_date_str, '%Y-%m-%d').date()
-        except: continue
-        links = re.findall(r'\[\[(.*?)\]\]', fm_str)
-        found = any(any(v.lower() in link.lower() for v in variants) for link in links)
-        if found and act_date > latest_date: latest_date = act_date
-    return latest_date if latest_date != date(2000, 1, 1) else None
+            frontmatter, body = load_frontmatter_file(file_path)
+        except Exception:
+            continue
+        if not frontmatter:
+            continue
+        records.append(
+            {
+                "file_path": file_path,
+                "frontmatter": frontmatter,
+                "body": body,
+                "link": wikilink_for_path(file_path),
+                "basename": entity_basename(file_path),
+                "display_name": display_name(file_path, frontmatter),
+            }
+        )
+    return records
 
-def get_velocity(entity_email, interactions_cache):
-    if not entity_email or not interactions_cache or entity_email not in interactions_cache: return 0
-    return interactions_cache[entity_email].get('hits_last_7_days', 0)
+
+def telemetry_snapshot(email, interactions_cache):
+    if not email:
+        return None
+    payload = interactions_cache.get(str(email).lower())
+    if not isinstance(payload, dict):
+        return None
+    last_date = bounded_date(payload.get("last_date"))
+    return {
+        "last_date": last_date,
+        "hits_last_7_days": max(0, int(payload.get("hits_last_7_days", 0) or 0)),
+    }
+
+
+def record_keys(record):
+    keys = set()
+    keys.update(link_variants(record["link"]))
+    keys.update(link_variants(record["basename"]))
+    keys.update(link_variants(record["display_name"]))
+    return keys
+
+
+def links_in_frontmatter(frontmatter):
+    keys = set()
+    for key in [
+        "primary-parent",
+        "organization",
+        "account",
+        "contact",
+        "opportunity",
+        "lead",
+        "deal",
+        "primary-contact",
+    ]:
+        keys.update(link_variants(frontmatter.get(key)))
+    for key in ["secondary-links", "contacts"]:
+        value = frontmatter.get(key) or []
+        if not isinstance(value, list):
+            value = [value]
+        for item in value:
+            keys.update(link_variants(item))
+    return keys
+
+
+def related_activities(entity_keys, activities):
+    linked = []
+    for activity in activities:
+        if links_in_frontmatter(activity["frontmatter"]) & entity_keys:
+            linked.append(activity)
+            continue
+        # Fallback for older records where only wikilinks exist in stringified frontmatter.
+        text = str(activity["frontmatter"])
+        if any(key in canonical_key(text) for key in entity_keys if key):
+            linked.append(activity)
+    return linked
+
+
+def related_tasks(entity_keys, tasks):
+    return [task for task in tasks if links_in_frontmatter(task["frontmatter"]) & entity_keys]
+
+
+def latest_interaction_date(record, activities, telemetry):
+    latest = telemetry["last_date"] if telemetry else None
+    entity_keys = record_keys(record)
+    for activity in related_activities(entity_keys, activities):
+        current = activity_date(activity["frontmatter"])
+        if current and (latest is None or current > latest):
+            latest = current
+    return latest
+
+
+def recent_activity_count(record, activities, days):
+    entity_keys = record_keys(record)
+    cutoff = date.today() - timedelta(days=days)
+    count = 0
+    for activity in related_activities(entity_keys, activities):
+        current = activity_date(activity["frontmatter"])
+        if current and current >= cutoff:
+            count += 1
+    return count
+
+
+def task_signal(record, tasks):
+    entity_keys = record_keys(record)
+    related = related_tasks(entity_keys, tasks)
+    overdue = 0
+    waiting = 0
+    actionable_due_soon = 0
+    today = date.today()
+    for task in related:
+        status = str(task["frontmatter"].get("status", "")).lower()
+        due = task_due_date(task["frontmatter"])
+        if status in ACTIONABLE_TASK_STATUSES and due:
+            if due < today:
+                overdue += 1
+            elif due <= today + timedelta(days=7):
+                actionable_due_soon += 1
+        if status in WAITING_TASK_STATUSES:
+            waiting += 1
+    return {
+        "overdue": overdue,
+        "waiting": waiting,
+        "actionable_due_soon": actionable_due_soon,
+    }
+
+
+def recency_score(last_contacted_date, priority):
+    if not last_contacted_date:
+        return 0, 999
+    days_since = max(0, (date.today() - last_contacted_date).days)
+    limit = PRIORITY_THRESHOLDS.get(str(priority or "medium").lower(), PRIORITY_THRESHOLDS["default"])
+    base = max(0, int(100 * (1 - (days_since / limit))))
+    if days_since <= 3:
+        return max(base, 100), days_since
+    if days_since <= 7:
+        return max(base, 80), days_since
+    if days_since <= 14:
+        return max(base, 60), days_since
+    if days_since <= 30:
+        return max(base, 35), days_since
+    if days_since <= 60:
+        return max(base, 15), days_since
+    return base, days_since
+
+
+def activity_score(count_30d):
+    return min(count_30d * 3, 18)
+
+
+def momentum_score(telemetry_hits):
+    return min(max(0, telemetry_hits) * 2, 12)
+
+
+def execution_score(task_stats, days_since):
+    score = 0
+    if task_stats["actionable_due_soon"]:
+        score += 10
+    if task_stats["overdue"] and days_since > 14:
+        score -= min(20, task_stats["overdue"] * 7)
+    if task_stats["waiting"] and days_since > 21:
+        score -= 10
+    return max(-20, min(score, 10))
+
+
+def classify_warmth(score):
+    if score >= 80:
+        return "hot"
+    if score >= 60:
+        return "warm"
+    if score >= 35:
+        return "monitor"
+    return "cold"
+
+
+def score_record(record, activities, tasks, interactions_cache):
+    frontmatter = record["frontmatter"]
+    telemetry = telemetry_snapshot(frontmatter.get("email"), interactions_cache)
+    latest = latest_interaction_date(record, activities, telemetry)
+    count_30d = recent_activity_count(record, activities, 30)
+    hits_7d = telemetry["hits_last_7_days"] if telemetry else 0
+    task_stats = task_signal(record, tasks)
+    priority = frontmatter.get("strategic-importance") or frontmatter.get("priority", "medium")
+
+    recency, days_since = recency_score(latest, priority)
+    activity = activity_score(count_30d)
+    momentum = momentum_score(hits_7d)
+    execution = execution_score(task_stats, days_since)
+    score = int(round((0.55 * recency) + activity + momentum + execution))
+    score = max(0, min(score, 100))
+
+    return {
+        "score": score,
+        "status": classify_warmth(score),
+        "days_since": days_since,
+        "last_contacted": latest,
+        "recent_activity_30d": count_30d,
+        "hits_last_7_days": hits_7d,
+        "task_stats": task_stats,
+        "priority": str(priority or "medium").lower(),
+    }
+
+
+def entity_type_for_directory(directory):
+    if directory == ORGANIZATIONS_DIR:
+        return "Organization"
+    if directory == ACCOUNTS_DIR:
+        return "Account"
+    if directory == CONTACTS_DIR:
+        return "Contact"
+    return "Deal"
 
 
 def deal_directories():
@@ -98,157 +366,240 @@ def deal_directories():
             directories.append(directory)
     return directories
 
-def calculate_warmth(last_contacted_date, priority, velocity=0):
-    if not last_contacted_date: return 0, "cold", 999
-    today = date.today()
-    days_since = (today - last_contacted_date).days
-    limit = PRIORITY_THRESHOLDS.get(str(priority or "medium").lower(), PRIORITY_THRESHOLDS['default'])
-    score = max(0, int(100 * (1 - (days_since / limit))))
-    score = min(100, score + (velocity * 10))
-    if score > 70: status = "warm"
-    elif score > 30: status = "neutral"
-    else: status = "cold"
-    return score, status, days_since
+
+def render_table(headers, rows, empty_text):
+    if not rows:
+        return empty_text
+    header = "| " + " | ".join(headers) + " |\n"
+    separator = "| " + " | ".join([":---"] * len(headers)) + " |\n"
+    body = "\n".join("| " + " | ".join(row) + " |" for row in rows)
+    return header + separator + body
+
+
+def render_intelligence(sections):
+    lines = [
+        "# Intelligence Dashboard",
+        "",
+        f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "",
+        "## Warmest Relationships",
+        "",
+        sections["warmest"],
+        "",
+        "## Cooling Relationships That Matter",
+        "",
+        sections["cooling"],
+        "",
+        "## New Discoveries",
+        "",
+        sections["discoveries"],
+        "",
+        "## Warm Paths",
+        "",
+        sections["warm_paths"],
+        "",
+        "## Suggested Brokerage Matches",
+        "",
+        sections["matches"],
+        "",
+    ]
+    return "\n".join(lines)
+
 
 def main():
     print("Running Intelligence Engine...")
-    activities_data = []
-    if os.path.exists(ACTIVITIES_DIR):
-        for file_path in iter_markdown_files(ACTIVITIES_DIR):
-            try:
-                fm, _ = load_frontmatter_file(file_path)
-                if fm:
-                    activities_data.append({'frontmatter': fm})
-            except:
-                pass
-
+    activities = collect_records(ACTIVITIES_DIR)
+    tasks = collect_records(TASKS_DIR)
     interactions_cache = load_json(INTERACTIONS_PATH, default={})
-    at_risk = []
-    account_stats = {} # {account_name: [scores]}
 
-    # 1. Process Contacts first to aggregate account health
-    contacts = []
-    if os.path.exists(CONTACTS_DIR):
-        for f in os.listdir(CONTACTS_DIR):
-            if f.endswith(".md"):
-                path = os.path.join(CONTACTS_DIR, f)
-                name = f[:-3]
-                try:
-                    fm, _ = load_frontmatter_file(path)
-                    if not fm:
-                        continue
-                    if directory == ACCOUNTS_DIR and fm.get('migration-target') == 'organization':
-                        continue
-                except: continue
-                
-                last_date = get_latest_interaction_date(name, fm.get('email'), activities_data, interactions_cache)
-                vel = get_velocity(fm.get('email'), interactions_cache)
-                score, stat, days = calculate_warmth(last_date, fm.get('priority', 'medium'), vel)
-                
-                update_frontmatter(path, {
-                    'warmth-score': score, 'warmth-status': stat, 'velocity-score': vel,
-                    'last-contacted': last_date.strftime('%Y-%m-%d') if last_date else "2000-01-01",
-                    'date-modified': date.today().strftime('%Y-%m-%d')
-                })
-                
-                if (stat == "cold" and fm.get('priority') in ['high', 'medium']) or vel >= 3:
-                    at_risk.append({'name': name, 'type': 'Contact', 'status': stat, 'velocity': vel, 'days': days})
-                
-                # Aggregate for account or deal
-                acc_link = as_link_name(fm.get('account', ''))
-                deal_link = as_link_name(fm.get('deal', ''))
-                parent = acc_link if acc_link else deal_link
-                
-                if parent:
-                    if parent not in account_stats: account_stats[parent] = []
-                    account_stats[parent].append(score)
+    scored_records = []
+    linked_scores = {}
 
-    # 2. Process Organizations, Accounts, and Deals
-    for directory in [ORGANIZATIONS_DIR, ACCOUNTS_DIR] + deal_directories():
-        if not os.path.exists(directory): continue
-        for f in os.listdir(directory):
-            if f.endswith(".md"):
-                path = os.path.join(directory, f)
-                name = f[:-3]
-                try:
-                    fm, _ = load_frontmatter_file(path)
-                    if not fm:
-                        continue
-                except: continue
-                
-                last_date = get_latest_interaction_date(name, fm.get('email'), activities_data, interactions_cache)
-                vel = get_velocity(fm.get('email'), interactions_cache)
-                importance = fm.get('strategic-importance') or fm.get('priority', 'medium')
-                score, stat, days = calculate_warmth(last_date, importance, vel)
-                
-                # Relational Graphing: Calculate Account/Deal Warmth Index
-                linked_scores = account_stats.get(name, [])
-                if linked_scores:
-                    avg_score = sum(linked_scores) / len(linked_scores)
-                    acc_index = min(100, int(avg_score + (len(linked_scores) * 5)))
-                else:
-                    acc_index = score
+    for directory in [CONTACTS_DIR, ORGANIZATIONS_DIR, ACCOUNTS_DIR] + deal_directories():
+        for record in collect_records(directory):
+            score_data = score_record(record, activities, tasks, interactions_cache)
+            entry = {
+                "record": record,
+                "entity_type": entity_type_for_directory(directory),
+                **score_data,
+            }
+            scored_records.append(entry)
 
-                update_frontmatter(path, {
-                    'warmth-score': score, 'warmth-status': stat, 'velocity-score': vel,
-                    'account-warmth-index': acc_index,
-                    'last-contacted': last_date.strftime('%Y-%m-%d') if last_date else "2000-01-01",
-                    'date-modified': date.today().strftime('%Y-%m-%d')
-                })
-                
-                important = importance in ['high', 'medium']
-                if (stat == "cold" and important) or vel >= 3:
-                    if directory == ORGANIZATIONS_DIR:
-                        type_label = 'Organization'
-                    elif directory == ACCOUNTS_DIR:
-                        type_label = 'Account'
-                    else:
-                        type_label = 'Deal'
-                    at_risk.append({'name': name, 'type': type_label, 'status': stat, 'velocity': vel, 'days': days, 'index': acc_index})
+            parent = normalize_link(
+                record["frontmatter"].get("account")
+                or record["frontmatter"].get("organization")
+                or record["frontmatter"].get("deal")
+            )
+            if parent:
+                linked_scores.setdefault(parent, []).append(score_data["score"])
 
-    # 3. Generate INTELLIGENCE.md
+    for entry in scored_records:
+        record = entry["record"]
+        frontmatter = record["frontmatter"]
+        parent_name = normalize_link(
+            frontmatter.get("account") or frontmatter.get("organization") or frontmatter.get("deal")
+        )
+        linked = linked_scores.get(record["basename"], [])
+        if not linked and parent_name == record["basename"]:
+            linked = linked_scores.get(parent_name, [])
+        account_index = max(linked) if linked else entry["score"]
+
+        payload = {
+            "warmth-score": entry["score"],
+            "warmth-status": entry["status"],
+            "velocity-score": entry["hits_last_7_days"],
+            "account-warmth-index": account_index,
+            "date-modified": date.today().strftime("%Y-%m-%d"),
+        }
+        if entry["last_contacted"]:
+            payload["last-contacted"] = entry["last_contacted"].strftime("%Y-%m-%d")
+        update_frontmatter(record["file_path"], payload)
+
+    warmest_rows = []
+    warmest_candidates = [
+        entry
+        for entry in scored_records
+        if entry["score"] >= 55 or entry["recent_activity_30d"] > 0 or entry["hits_last_7_days"] > 0
+    ]
+    for entry in sorted(
+        warmest_candidates,
+        key=lambda item: (item["score"], item["recent_activity_30d"], item["hits_last_7_days"]),
+        reverse=True,
+    )[:12]:
+        warmest_rows.append(
+            [
+                record["link"] if (record := entry["record"]) else "",
+                entry["entity_type"],
+                str(entry["score"]),
+                entry["status"].upper(),
+                str(entry["recent_activity_30d"]),
+                str(entry["hits_last_7_days"]),
+                str(entry["days_since"]),
+            ]
+        )
+
+    cooling_rows = []
+    cooling_candidates = [
+        entry
+        for entry in scored_records
+        if entry["priority"] in {"high", "medium"}
+        and (entry["score"] < 45 or entry["task_stats"]["overdue"] > 0)
+    ]
+    for entry in sorted(
+        cooling_candidates,
+        key=lambda item: (item["task_stats"]["overdue"], item["days_since"], -item["score"]),
+        reverse=True,
+    )[:12]:
+        reasons = []
+        if entry["task_stats"]["overdue"]:
+            reasons.append(f"{entry['task_stats']['overdue']} overdue task(s)")
+        if entry["days_since"] < 999:
+            reasons.append(f"{entry['days_since']}d since last interaction")
+        if entry["task_stats"]["waiting"]:
+            reasons.append(f"{entry['task_stats']['waiting']} waiting")
+        cooling_rows.append(
+            [
+                entry["record"]["link"],
+                entry["entity_type"],
+                str(entry["score"]),
+                entry["status"].upper(),
+                ", ".join(reasons) or "stale relationship",
+            ]
+        )
+
+    ignore = set(load_json(IGNORE_LIST_PATH, default=[]))
+    raw_discoveries = load_json(DISCOVERY_PATH, default=[])
+    active_discoveries = []
+    for discovery in raw_discoveries:
+        if not isinstance(discovery, dict):
+            continue
+        email = discovery.get("email")
+        if email and email in ignore:
+            continue
+        if not discovery.get("name") and not discovery.get("rationale"):
+            continue
+        active_discoveries.append(discovery)
+
+    discovery_rows = [
+        [
+            str(item.get("name") or "Unknown"),
+            str(item.get("type") or "Unknown"),
+            str(item.get("rationale") or ""),
+        ]
+        for item in active_discoveries[:10]
+    ]
+
+    warm_path_rows = []
+    for item in load_json(WARM_PATHS_PATH, default=[]):
+        if not isinstance(item, dict):
+            continue
+        warm_path_rows.append(
+            [
+                str(item.get("deal") or ""),
+                str(item.get("person") or ""),
+                f"[[{item.get('connection')}]]" if item.get("connection") else "",
+                str(item.get("rationale") or ""),
+            ]
+        )
+
+    match_rows = []
+    for item in load_json(MATCHES_PATH, default=[])[:10]:
+        if not isinstance(item, dict):
+            continue
+        match_rows.append(
+            [
+                f"[[{item.get('deal')}]]" if item.get("deal") else "",
+                f"[[{item.get('investor')}]]" if item.get("investor") else "",
+                f"{item.get('score', 0)}%",
+                str(item.get("rationale") or item.get("rationate") or ""),
+            ]
+        )
+
+    sections = {
+        "warmest": render_table(
+            ["Entity", "Type", "Warmth", "Status", "30d Activity", "7d Velocity", "Days Since"],
+            warmest_rows,
+            "No warm relationships identified yet.",
+        ),
+        "cooling": render_table(
+            ["Entity", "Type", "Warmth", "Status", "Why It Matters"],
+            cooling_rows,
+            "No high-priority relationships are currently cooling.",
+        ),
+        "discoveries": render_table(
+            ["Name", "Type", "Rationale"],
+            discovery_rows,
+            "No new discoveries pending.",
+        ),
+        "warm_paths": render_table(
+            ["Deal", "Key Person", "Warm Connection", "Rationale"],
+            warm_path_rows,
+            "No warm paths identified.",
+        ),
+        "matches": render_table(
+            ["Deal", "Potential Investor", "Confidence", "Rationale"],
+            match_rows,
+            "No automated matches found.",
+        ),
+    }
+
     print(f"Generating {INTELLIGENCE_DASHBOARD}...")
-    content = f"# Intelligence Dashboard\n\n**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
-    content += "## ⚠️ High-Priority & Momentum Relationships\n"
-    if at_risk:
-        content += "| Entity | Type | Status | Velocity (7d) | Account Health | Days Since |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n"
-        for i in sorted(at_risk, key=lambda x: (x['velocity'], x['days']), reverse=True):
-            v_str = f"🔥 {i['velocity']}" if i['velocity'] >= 3 else str(i['velocity'])
-            idx_str = str(i.get('index', 'N/A'))
-            content += f"| [[{i['name']}]] | {i['type']} | {('HOT' if i['velocity'] >= 3 else i['status'].upper())} | {v_str} | {idx_str} | {i['days']} |\n"
-    else: content += "All relationships are warm or neutral. Great job!\n"
-    
-    content += "\n## ✨ New Discoveries\n"
-    disc = load_json(DISCOVERY_PATH); ignore = load_json(IGNORE_LIST_PATH)
-    active_disc = [d for d in disc if d.get('email') not in ignore]
-    if active_disc:
-        content += "| Name | Type | Rationale | Action |\n| :--- | :--- | :--- | :--- |\n"
-        for d in active_disc: content += f"| {d.get('name')} | {d.get('type')} | {d.get('rationale')} | `approve-discovery` |\n"
-    else: content += "No new discoveries pending.\n"
-    
-    content += "\n## 🔗 Warm Paths\n"
-    paths = load_json(WARM_PATHS_PATH)
-    if paths:
-        content += "| Deal | Key Person | Warm Connection | Rationale |\n| :--- | :--- | :--- | :--- |\n"
-        for p in paths: content += f"| {p.get('deal')} | {p.get('person')} | [[{p.get('connection')}]] | {p.get('rationale')} |\n"
-    else: content += "No new warm paths identified.\n"
-
-    content += "\n## 🤝 Suggested Brokerage Matches\n"
-    matches = load_json(MATCHES_PATH)
-    if matches:
-        content += "| Deal | Potential Investor | Confidence | Rationale |\n| :--- | :--- | :--- | :--- |\n"
-        for m in matches[:5]: # Top 5
-            content += f"| [[{m.get('deal')}]] | [[{m.get('investor')}]] | {m.get('score')}% | {m.get('rationate')} |\n"
-    else: content += "No automated matches found.\n"
-    
-    with open(INTELLIGENCE_DASHBOARD, 'w', encoding='utf-8') as f: f.write(content)
+    with open(INTELLIGENCE_DASHBOARD, "w", encoding="utf-8") as handle:
+        handle.write(render_intelligence(sections))
 
     if os.path.exists(RELATIONSHIP_MEMORY_SCRIPT):
         try:
             print("Generating relationship memory...")
-            subprocess.run(["python3", RELATIONSHIP_MEMORY_SCRIPT], check=True, env={**os.environ, "CRM_DATA_PATH": CRM_DATA_PATH})
+            subprocess.run(
+                ["python3", RELATIONSHIP_MEMORY_SCRIPT],
+                check=True,
+                env={**os.environ, "CRM_DATA_PATH": CRM_DATA_PATH},
+            )
         except Exception as exc:
             print(f"Warning: relationship memory generation failed: {exc}")
+
     print("Intelligence Engine run complete.")
 
-if __name__ == "__main__": main()
+
+if __name__ == "__main__":
+    main()

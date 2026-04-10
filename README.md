@@ -24,7 +24,7 @@ The current canonical schema lives in `docs/schema-spec.md`.
 If you are a new agent or developer and need to get productive quickly, read in this order:
 
 1. `docs/schema-spec.md`
-2. `GEMINI.md`
+2. `AGENTS.md`
 3. `crm-data/DASHBOARD.md`
 4. `crm-data/index.md`
 5. `crm-data/log.md`
@@ -60,9 +60,9 @@ Operating rules:
 - treat `log.md` as append-only operational history
 - mutation workflows should update both automatically
 
-## Current v4 Model
+## Current Model
 
-The system is now a v4 memory system. The key record types are:
+The system currently uses this memory model. The key record types are:
 - `Organization`: stable market entity
 - `Inbox`: temporary raw capture
 - `Lead`: pre-conversion relationship record
@@ -74,7 +74,7 @@ The system is now a v4 memory system. The key record types are:
 - `Activity`: real interaction or event
 - `Task`: explicit next action
 
-Important v4 rules:
+Important current rules:
 - `Inbox/` replaces the old “notes as inbox” pattern.
 - `Notes/` are durable context, not raw intake.
 - If something happened, it should usually create an `Activity`.
@@ -92,7 +92,7 @@ Important v4 rules:
 ### Prerequisites
 
 - Python 3
-- Gemini CLI
+- Gemini CLI or another compatible coding agent runner
 - `gws` CLI authenticated to the relevant Google Workspace account
 
 ### Configure the vault path
@@ -296,13 +296,13 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 - [matchmaker.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/matchmaker.py#L1): deal/account matching
 - [migrate_accounts_to_organizations.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/migrate_accounts_to_organizations.py#L1): reference migration helper
 - [rewrite_organization_references.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/rewrite_organization_references.py#L1): reference rewrite helper
-- [migrate_opportunities_v41.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/migrate_opportunities_v41.py#L1): opportunity schema normalization helper
+- [migrate_opportunities_v41.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/migrate_opportunities_v41.py#L1): opportunity schema migration helper
 
 ## Recommended Reading
 
 For current product and schema context, read:
 - [schema-spec.md](/Users/johnjanuszczak/Projects/crm-logic/docs/schema-spec.md#L1)
-- [GEMINI.md](/Users/johnjanuszczak/Projects/crm-logic/GEMINI.md#L1)
+- [AGENTS.md](/Users/johnjanuszczak/Projects/crm-logic/AGENTS.md#L1)
 - [README.md](/Users/johnjanuszczak/Projects/crm-logic/README.md#L1)
 - [examples/README.md](/Users/johnjanuszczak/Projects/crm-logic/examples/README.md#L1)
 
@@ -312,7 +312,7 @@ Historical and superseded design docs live in:
 ## Current Rough Edges
 
 Be aware of these realities:
-- the vault contains a mix of v4-native and older records
+- the vault contains a mix of current-shape and older records
 - the vault still uses `Deal-Flow/` as the live deal directory
 - some legacy Activities and Tasks still use older frontmatter shapes
 - some compatibility fields are still tolerated by readers during migration cleanup

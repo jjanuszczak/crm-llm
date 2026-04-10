@@ -55,6 +55,7 @@ except ImportError:
 OWN_EMAILS = {
     "operator@example.com",
     "operator-alt@example.com",
+    "operator-work@example.com",
 }
 ACTIVITY_WRITE_STATUSES = {"todo", "in-progress"}
 PROFESSIONAL_KEYWORDS = (
@@ -99,6 +100,8 @@ TASK_NOISE_PATTERNS = (
     r"delete it immediately and notify",
     r"unintended recipients are not authorized",
     r"consider the environment when printing",
+    r"consider the environment before printing",
+    r"consider the environment .* printing",
     r"terms and conditions apply",
     r"do not reply",
 )
@@ -676,6 +679,40 @@ class TaskAnalyzer:
         return matches
 
     @staticmethod
+    def _relevance_tokens(text):
+        stopwords = {
+            "about", "after", "before", "between", "could", "email", "follow", "from", "have", "john", "meeting",
+            "need", "next", "note", "notes", "outline", "please", "regards", "review", "sent", "share", "task",
+            "that", "their", "them", "this", "today", "will", "with", "would", "your",
+        }
+        tokens = re.findall(r"[a-z0-9]{4,}", (text or "").lower())
+        return {token for token in tokens if token not in stopwords}
+
+    def task_relevance_score(self, event, task):
+        event_text = " ".join(
+            [
+                event.get("subject_or_title", ""),
+                event.get("body_text", ""),
+                event.get("snippet", ""),
+            ]
+        )
+        task_text = " ".join(
+            [
+                task.get("name", ""),
+                task.get("body", ""),
+                task.get("frontmatter", {}).get("contact", ""),
+                task.get("frontmatter", {}).get("primary-parent", ""),
+                task.get("frontmatter", {}).get("account", ""),
+            ]
+        )
+        overlap = self._relevance_tokens(event_text) & self._relevance_tokens(task_text)
+        if len(overlap) >= 2:
+            return 0.25
+        if len(overlap) == 1:
+            return 0.15
+        return 0.0
+
+    @staticmethod
     def extract_action_items(text):
         items = []
         patterns = [
@@ -701,10 +738,26 @@ class TaskAnalyzer:
     def completion_confidence(text, event_type):
         score = 0.0
         lowered = (text or "").lower()
+        if any(re.search(pattern, lowered, re.I) for pattern in TASK_NOISE_PATTERNS):
+            return 0.0
         if any(word in lowered for word in ["done", "completed", "scheduled", "sent", "attached", "reviewed", "confirmed"]):
             score += 0.55
         if event_type == "calendar":
             score += 0.2
+        return min(score, 0.95)
+
+    def completion_confidence_for_task(self, event, task):
+        base = self.completion_confidence(event.get("body_text", ""), event["source_type"])
+        relevance = self.task_relevance_score(event, task)
+        if relevance == 0.0:
+            return 0.0
+
+        score = base + relevance
+        if event.get("direction") == "outbound":
+            score += 0.2
+            task_name = (task.get("name") or "").lower()
+            if any(word in task_name for word in ["send", "introduce", "intro", "nudge", "request", "outline", "follow"]):
+                score += 0.1
         return min(score, 0.95)
 
 
@@ -1251,9 +1304,10 @@ def main():
                 activity_updates.append(activity_update)
 
         matched_tasks = task_analyzer.find_matching_tasks(set(link_variants(primary_anchor["record"]["link"])) if primary_anchor else set())
-        completion_conf = task_analyzer.completion_confidence(event.get("body_text", ""), event["source_type"])
-        if completion_conf >= 0.55:
-            for task in matched_tasks:
+        for task in matched_tasks:
+            completion_conf = task_analyzer.completion_confidence_for_task(event, task)
+            if completion_conf < 0.65:
+                continue
                 task_suggestions.append(
                     build_task_suggestion(
                         event,

@@ -267,6 +267,12 @@ Live task semantics:
 - `todo`: John owes the next move
 - `waiting`: someone else owes the next move; set `due-date` to the next review date
 - `completed`: done or clearly superseded
+- task records may persist `google-task-id` and `google-task-list-id` when linked to Google Tasks
+
+Google Tasks operating rule:
+- the CRM remains the source of truth for task creation and task meaning
+- `crm-sync-google-tasks` is a narrow sync utility for mirroring CRM tasks into Google Tasks and pulling clear remote completion back into the CRM
+- do not treat Google-native personal tasks as CRM tasks unless an explicit intake workflow is introduced
 
 ## Git And Safety Rules
 
@@ -341,6 +347,7 @@ These migration scripts reflect real structural work already done. Use them as r
 Most relevant skills:
 - `crm-daily-processing`
 - `crm-ingest-gws`
+- `crm-sync-google-tasks`
 - `update-dashboard`
 - `crm-create-account`
 - `crm-create-contact`

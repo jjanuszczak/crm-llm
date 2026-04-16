@@ -11,6 +11,7 @@ The source of truth is not this repo. The source of truth is the private vault a
 This repo gives an agent or developer the machinery to:
 - create and maintain CRM records in markdown
 - sync Gmail and Google Calendar into relationship memory
+- mirror CRM tasks into Google Tasks with durable task IDs
 - generate a relationship-first dashboard
 - track leads before conversion
 - process raw capture through an `Inbox/`
@@ -179,6 +180,12 @@ python3 scripts/task_manager.py set-status "Tasks/2026/04/2026-04-10-follow-up-w
 python3 scripts/task_manager.py set-status "Tasks/2026/04/2026-04-10-follow-up-with-jane.md" --status completed
 ```
 
+Sync CRM tasks to Google Tasks:
+
+```bash
+python3 .gemini/skills/crm-sync-google-tasks/scripts/sync-tasks.py
+```
+
 ## Day-To-Day Operating Loop
 
 For a new operator or agent, the normal loop is now best treated as the top-level skill `crm-daily-processing`.
@@ -247,7 +254,13 @@ Current execution rules:
 - `waiting`: someone else owes the next move
 - `completed`: done or clearly superseded
 - when moving a task to `waiting`, update `due-date` to the next review date
+- task records may also persist `google-task-id` and `google-task-list-id` when linked to Google Tasks
 - for company fundraising work, decide explicitly whether you are recording a `Deal`, an `Opportunity`, or both
+
+Google Tasks operating rule:
+- the CRM remains the source of truth for task creation and structure
+- `crm-sync-google-tasks` mirrors CRM-created tasks into Google Tasks and may pull remote completion back into the CRM
+- do not assume Google-native personal tasks belong in the CRM unless an explicit intake workflow is added later
 
 Preferred current write surface:
 - use the manager CLIs for `Organization`, `Account`, `Contact`, `Deal`, `Task`, `Lead`, and `Opportunity` lifecycle work
@@ -259,6 +272,7 @@ Preferred current write surface:
 The most relevant skills for real use are:
 - `crm-daily-processing`
 - `crm-ingest-gws`
+- `crm-sync-google-tasks`
 - `update-dashboard`
 - `crm-lead-manager`
 - `crm-opportunity-manager`
@@ -288,6 +302,7 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 - [lead_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-lead-manager/scripts/lead_manager.py#L1): lead lifecycle and conversion
 - [opportunity_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-opportunity-manager/scripts/opportunity_manager.py#L1): opportunity lifecycle and execution workflows
 - [task_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/task_manager.py#L1): task creation, update, and status management
+- [sync-tasks.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-sync-google-tasks/scripts/sync-tasks.py#L1): CRM-to-Google Tasks sync using persisted Google task identifiers
 - [inbox_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/inbox_manager.py#L1): Inbox creation and processing
 - [navigation_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/navigation_manager.py#L1): vault root `index.md` generation and `log.md` appends
 - [record_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/record_manager.py#L1): first-class Note and Activity creation

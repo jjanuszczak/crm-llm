@@ -273,6 +273,8 @@ Explicit next actions.
 | `type` | Canonical | Currently `follow-up` in templates |
 | `source` | Canonical | Provenance |
 | `source-ref` | Canonical | Provenance pointer |
+| `google-task-id` | Canonical | Stable Google Tasks task identifier when synced |
+| `google-task-list-id` | Canonical | Google Tasks list identifier paired with `google-task-id` |
 | `email-link` | Canonical | Optional deep link |
 | `meeting-notes` | Canonical | Optional note pointer |
 | `parent` | Deprecated | Legacy alias |

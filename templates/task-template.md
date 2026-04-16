@@ -1,7 +1,7 @@
 ---
 id: "{{task-id}}"
 task-name: "{{Task Name}}"
-status: "{{todo | in-progress | blocked | done | canceled}}"
+status: "{{todo | waiting | completed}}"
 priority: "{{high | medium | low}}"
 owner: "{{Owner}}"
 due-date: {{YYYY-MM-DD}}
@@ -16,6 +16,8 @@ lead: "[[{{Lead}}]]"
 type: follow-up
 source: "{{manual | activity | inbox | gmail | calendar}}"
 source-ref: "{{Source Reference}}"
+google-task-id: "{{Google Task ID}}"
+google-task-list-id: "{{Google Task List ID}}"
 email-link: {{email-link}}
 meeting-notes: {{meeting-notes}}
 ---

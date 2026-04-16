@@ -100,6 +100,8 @@ def cmd_create(args):
         "type": args.type,
         "source": args.source,
         "source-ref": args.source_ref or "",
+        "google-task-id": args.google_task_id or "",
+        "google-task-list-id": args.google_task_list_id or "",
         "email-link": args.email_link or "",
         "meeting-notes": args.meeting_notes or "",
     }
@@ -159,6 +161,10 @@ def cmd_update(args):
         frontmatter["source"] = args.source
     if args.source_ref is not None:
         frontmatter["source-ref"] = args.source_ref
+    if args.google_task_id is not None:
+        frontmatter["google-task-id"] = args.google_task_id
+    if args.google_task_list_id is not None:
+        frontmatter["google-task-list-id"] = args.google_task_list_id
     if args.email_link is not None:
         frontmatter["email-link"] = args.email_link
     if args.meeting_notes is not None:
@@ -247,6 +253,8 @@ def build_parser():
     create_parser.add_argument("--type", default="follow-up")
     create_parser.add_argument("--source", default="manual")
     create_parser.add_argument("--source-ref")
+    create_parser.add_argument("--google-task-id")
+    create_parser.add_argument("--google-task-list-id")
     create_parser.add_argument("--email-link")
     create_parser.add_argument("--meeting-notes")
     create_parser.add_argument("--description")
@@ -266,6 +274,8 @@ def build_parser():
     update_parser.add_argument("--lead")
     update_parser.add_argument("--source")
     update_parser.add_argument("--source-ref")
+    update_parser.add_argument("--google-task-id")
+    update_parser.add_argument("--google-task-list-id")
     update_parser.add_argument("--email-link")
     update_parser.add_argument("--meeting-notes")
     update_parser.add_argument("--description")

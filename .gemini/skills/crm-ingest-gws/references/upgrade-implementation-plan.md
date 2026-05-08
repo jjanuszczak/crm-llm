@@ -95,6 +95,7 @@ Required behavior:
   - explicit `meeting-notes` links in linked CRM records
   - Google Docs links in email/calendar text
   - Granola-style note links in event or message text
+- when those are absent, still run a best-effort Google Drive search using event title, participants, and linked CRM context
 - use notes to improve:
   - activity summary quality
   - task extraction

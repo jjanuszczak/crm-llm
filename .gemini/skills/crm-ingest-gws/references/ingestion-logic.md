@@ -182,10 +182,13 @@ If one event suggests both task completion and a new task:
 
 ### When to look for notes
 
-For commercially or relationship-relevant meetings, automatically inspect likely note sources:
+For every processed calendar event and every relationship-relevant email, automatically run a note lookup before finalizing downstream activity, task, lead, or opportunity outputs.
+
+Lookup sources should include:
 - `meeting-notes` fields on linked CRM records
 - Google Docs links in event or email text
 - Granola note links in event or email text
+- a best-effort Google Drive search for likely notes based on title, participants, and linked CRM context
 
 ### How notes are used
 
@@ -194,6 +197,11 @@ Meeting notes should improve:
 - task extraction
 - lead-stage suggestions
 - opportunity suggestions
+
+If the note source is a Google Doc, read the document text and fold it into:
+- signal inference
+- task extraction
+- meeting-notes summaries stored in review queues
 
 When notes are used, preserve:
 - `source_event_summary`

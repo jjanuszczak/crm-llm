@@ -116,12 +116,15 @@ And for conversion suggestions it should always include:
 - `conversion_mode = relationship-only`
 - or `conversion_mode = undetermined`
 
-### 5. Use meeting notes when available
+### 5. Always look for meeting notes in Google Drive
 
-When the ingester encounters a relationship-relevant meeting or call, it should look for explicit note sources such as:
-- Google Docs links
-- Granola note links
+When the ingester processes a calendar entry or relationship-relevant email, it should always run a meeting-notes lookup step before finalizing activity, task, lead, or opportunity suggestions.
+
+The lookup order should include:
+- Google Docs links already present in the email or calendar text
+- Granola note links already present in the email or calendar text
 - existing `meeting-notes` fields on linked CRM records
+- a best-effort Google Drive search for likely meeting notes even when the source event does not already contain a note link
 
 Meeting notes should enrich:
 - activity summaries
@@ -133,6 +136,12 @@ When notes are used, preserve:
 - `source_event_summary`
 - `meeting_notes_summary`
 - `derived_recommendation`
+
+If the Drive search finds a likely Google Doc, the ingester should read the document text and use it as additional context for:
+- signal detection
+- action-item extraction
+- activity write quality
+- review queue summaries
 
 ### 6. Treat tasks conservatively
 

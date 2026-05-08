@@ -101,6 +101,13 @@ TASK_NOISE_PATTERNS = (
     r"do not reply",
 )
 
+NOTE_SEARCH_STOPWORDS = {
+    "about", "after", "before", "between", "call", "catch", "check", "discussion", "follow",
+    "from", "have", "intro", "introduction", "john", "meeting", "notes", "regards", "re",
+    "review", "sent", "share", "sync", "team", "teams", "thanks", "that", "the", "this",
+    "update", "with", "would", "your",
+}
+
 
 def get_crm_data_path():
     env_path = os.path.join(PROJECT_ROOT, ".env")
@@ -324,6 +331,19 @@ def professional_signal_count(text):
 def summarize_text(text, limit=400):
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
     return cleaned[:limit].strip()
+
+
+def search_tokens(text, limit=4):
+    tokens = []
+    for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9&.-]{2,}", text or ""):
+        normalized = token.strip(" .,-_").lower()
+        if len(normalized) < 3 or normalized in NOTE_SEARCH_STOPWORDS:
+            continue
+        if normalized not in tokens:
+            tokens.append(normalized)
+        if len(tokens) >= limit:
+            break
+    return tokens
 
 
 def looks_like_noise_message(event):
@@ -684,10 +704,316 @@ class NotesAnalyzer:
         return note_links
 
     @staticmethod
-    def build_notes_summary(note_links):
-        if not note_links:
+    def get_note_context(event):
+        context = event.get("_notes_context")
+        if isinstance(context, dict):
+            return context
+        return {"links": [], "summary": "", "text": "", "looked_up": False}
+
+    @classmethod
+    def get_note_links(cls, event):
+        links = list(cls.detect_note_links(event))
+        context = cls.get_note_context(event)
+        for link in context.get("links", []):
+            if link and link not in links:
+                links.append(link)
+        return links
+
+    @classmethod
+    def build_notes_summary(cls, note_links, notes_text=""):
+        if not note_links and not notes_text:
             return ""
-        return "Detected meeting-note links: " + ", ".join(note_links[:3])
+        details = []
+        if note_links:
+            details.append("Detected meeting-note links: " + ", ".join(note_links[:3]))
+        excerpt = summarize_text(notes_text, 360)
+        if excerpt:
+            details.append(f"Notes summary: {excerpt}")
+        return " ".join(details).strip()
+
+    @classmethod
+    def get_note_summary(cls, event):
+        context = cls.get_note_context(event)
+        if context.get("summary"):
+            return context["summary"]
+        return cls.build_notes_summary(cls.get_note_links(event), context.get("text", ""))
+
+    @classmethod
+    def combined_event_text(cls, event):
+        context = cls.get_note_context(event)
+        note_text = str(context.get("text", "")).strip()
+        base_text = "\n".join(
+            [
+                str(event.get("subject_or_title", "")).strip(),
+                str(event.get("body_text", "")).strip(),
+                str(event.get("snippet", "")).strip(),
+            ]
+        ).strip()
+        if note_text:
+            return f"{base_text}\n\nMeeting notes:\n{note_text}".strip()
+        return base_text
+
+
+class DriveMeetingNotesResolver:
+    GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
+
+    def __init__(self, crm_index):
+        self.crm_index = crm_index
+        self.search_cache = {}
+        self.doc_cache = {}
+        self.metadata_cache = {}
+
+    @staticmethod
+    def _escape_drive_query(value):
+        return str(value or "").replace("\\", "\\\\").replace("'", "\\'")
+
+    @staticmethod
+    def _extract_google_doc_id(url):
+        match = re.search(r"/document/d/([A-Za-z0-9_-]+)", str(url or ""))
+        return match.group(1) if match else ""
+
+    @staticmethod
+    def _google_doc_url(document_id):
+        if not document_id:
+            return ""
+        return f"https://docs.google.com/document/d/{document_id}/edit"
+
+    def _drive_list(self, query):
+        cache_key = query
+        if cache_key in self.search_cache:
+            return self.search_cache[cache_key]
+        payload = run_gws(
+            [
+                "gws",
+                "drive",
+                "files",
+                "list",
+                "--params",
+                json.dumps(
+                    {
+                        "q": query,
+                        "pageSize": 5,
+                        "orderBy": "modifiedTime desc",
+                        "supportsAllDrives": True,
+                        "includeItemsFromAllDrives": True,
+                    }
+                ),
+            ]
+        )
+        files = payload.get("files", []) if isinstance(payload, dict) else []
+        self.search_cache[cache_key] = files
+        return files
+
+    def _drive_get_metadata(self, file_id):
+        if not file_id:
+            return {}
+        if file_id in self.metadata_cache:
+            return self.metadata_cache[file_id]
+        payload = run_gws(
+            [
+                "gws",
+                "drive",
+                "files",
+                "get",
+                "--params",
+                json.dumps({"fileId": file_id, "supportsAllDrives": True}),
+            ]
+        )
+        self.metadata_cache[file_id] = payload if isinstance(payload, dict) else {}
+        return self.metadata_cache[file_id]
+
+    def _docs_get_text(self, document_id):
+        if not document_id:
+            return ""
+        if document_id in self.doc_cache:
+            return self.doc_cache[document_id]
+        payload = run_gws(
+            [
+                "gws",
+                "docs",
+                "documents",
+                "get",
+                "--params",
+                json.dumps({"documentId": document_id}),
+            ]
+        )
+        text = self._extract_doc_text(payload if isinstance(payload, dict) else {})
+        self.doc_cache[document_id] = text
+        return text
+
+    def _extract_doc_text(self, payload):
+        chunks = []
+
+        def walk_content(content):
+            for item in content or []:
+                paragraph = item.get("paragraph")
+                if paragraph:
+                    for element in paragraph.get("elements", []):
+                        text_run = element.get("textRun")
+                        if text_run and text_run.get("content"):
+                            chunks.append(text_run["content"])
+                table = item.get("table")
+                if table:
+                    for row in table.get("tableRows", []):
+                        for cell in row.get("tableCells", []):
+                            walk_content(cell.get("content", []))
+                toc = item.get("tableOfContents")
+                if toc:
+                    walk_content(toc.get("content", []))
+
+        if payload.get("tabs"):
+            for tab in payload.get("tabs", []):
+                document_tab = tab.get("documentTab", {})
+                walk_content(document_tab.get("body", {}).get("content", []))
+                for child in tab.get("childTabs", []) or []:
+                    document_tab = child.get("documentTab", {})
+                    walk_content(document_tab.get("body", {}).get("content", []))
+        else:
+            walk_content(payload.get("body", {}).get("content", []))
+
+        return summarize_text("".join(chunks), 4000)
+
+    def _linked_record_note_links(self, primary_anchor, secondary_links):
+        links = []
+        candidate_links = []
+        if primary_anchor:
+            candidate_links.append(primary_anchor["record"]["link"])
+        candidate_links.extend(secondary_links or [])
+        for link in candidate_links:
+            for variant in link_variants(link):
+                record = self.crm_index.linked_records.get(variant)
+                if not record:
+                    continue
+                note_link = str(record["frontmatter"].get("meeting-notes", "")).strip()
+                if note_link and note_link not in links:
+                    links.append(note_link)
+                for url in extract_urls(record.get("body", "")):
+                    if ("docs.google.com/document" in url or "notes.granola.ai" in url) and url not in links:
+                        links.append(url)
+        return links
+
+    def _search_terms(self, event, primary_anchor, secondary_links):
+        terms = []
+
+        def add_terms(text, limit):
+            for token in search_tokens(text, limit=limit):
+                if token not in terms:
+                    terms.append(token)
+
+        add_terms(event.get("subject_or_title", ""), 4)
+        if primary_anchor:
+            add_terms(primary_anchor["record"].get("name", ""), 3)
+        for link in secondary_links or []:
+            for variant in link_variants(link):
+                record = self.crm_index.linked_records.get(variant)
+                if record:
+                    add_terms(record.get("name", ""), 2)
+                    break
+        for participant in event.get("participants", []):
+            email = participant.get("email", "")
+            if email in OWN_EMAILS:
+                continue
+            add_terms(participant.get("name", "") or email.split("@", 1)[0], 2)
+        return terms[:5]
+
+    def _search_drive_candidates(self, event, primary_anchor, secondary_links):
+        terms = self._search_terms(event, primary_anchor, secondary_links)
+        if not terms:
+            return []
+
+        queries = []
+        term_pairs = [terms[:2], [terms[0]], terms[1:3]]
+        for pair in term_pairs:
+            pair = [term for term in pair if term]
+            if not pair:
+                continue
+            clauses = [
+                f"(name contains '{self._escape_drive_query(term)}' or fullText contains '{self._escape_drive_query(term)}')"
+                for term in pair
+            ]
+            queries.append(
+                "mimeType='application/vnd.google-apps.document' and trashed=false and " + " and ".join(clauses)
+            )
+
+        candidates = []
+        seen_ids = set()
+        for query in queries:
+            try:
+                for item in self._drive_list(query):
+                    file_id = str(item.get("id", "")).strip()
+                    if not file_id or file_id in seen_ids:
+                        continue
+                    seen_ids.add(file_id)
+                    candidates.append(item)
+            except RuntimeError:
+                continue
+        return candidates[:5]
+
+    @staticmethod
+    def _needs_drive_search(event):
+        if event.get("source_type") == "calendar":
+            return True
+        combined = " ".join(
+            [
+                str(event.get("subject_or_title", "")).strip(),
+                str(event.get("body_text", "")).strip(),
+                str(event.get("snippet", "")).strip(),
+            ]
+        )
+        return bool(
+            re.search(
+                r"\b(meet|meeting|call|sync|agenda|minutes|notes|debrief|follow[- ]up call|teams|zoom|google meet)\b",
+                combined,
+                re.I,
+            )
+        )
+
+    def resolve_for_event(self, event, primary_anchor, secondary_links):
+        links = []
+        for link in NotesAnalyzer.detect_note_links(event):
+            if link not in links:
+                links.append(link)
+        for link in self._linked_record_note_links(primary_anchor, secondary_links):
+            if link not in links:
+                links.append(link)
+
+        looked_up = False
+        if self._needs_drive_search(event):
+            drive_candidates = self._search_drive_candidates(event, primary_anchor, secondary_links)
+            if drive_candidates:
+                looked_up = True
+            for item in drive_candidates[:1]:
+                file_id = str(item.get("id", "")).strip()
+                if not file_id:
+                    continue
+                doc_url = self._google_doc_url(file_id)
+                if doc_url and doc_url not in links:
+                    links.append(doc_url)
+
+        notes_text_parts = []
+        for link in links[:2]:
+            document_id = self._extract_google_doc_id(link)
+            if not document_id:
+                continue
+            looked_up = True
+            try:
+                metadata = self._drive_get_metadata(document_id)
+            except RuntimeError:
+                metadata = {}
+            title = str(metadata.get("name", "")).strip()
+            try:
+                doc_text = self._docs_get_text(document_id)
+            except RuntimeError:
+                doc_text = ""
+            excerpt = summarize_text(doc_text, 900)
+            if title and excerpt:
+                notes_text_parts.append(f"{title}: {excerpt}")
+            elif excerpt:
+                notes_text_parts.append(excerpt)
+
+        notes_text = "\n".join(part for part in notes_text_parts if part).strip()
+        summary = NotesAnalyzer.build_notes_summary(links, notes_text)
+        return {"links": links[:5], "summary": summary, "text": notes_text, "looked_up": looked_up}
 
 
 class TaskAnalyzer:
@@ -925,7 +1251,7 @@ def build_activity_body(event, note_links, resolutions):
                 matched_names.extend([context["name"] for context in resolution.get("company_contexts", [])[:2]])
     matched_names = sorted({name for name in matched_names if name})
     body_text = summarize_text(event.get("body_text") or event.get("snippet", ""), 900)
-    note_summary = NotesAnalyzer.build_notes_summary(note_links)
+    note_summary = NotesAnalyzer.get_note_summary(event)
     lines = [
         f"# **Activity: {event['subject_or_title']}**",
         "",
@@ -953,7 +1279,7 @@ def activity_dedupe_key(source_type, source_id, primary_parent):
 
 
 def maybe_write_activity(event, primary_anchor, secondary_links, crm_index, resolutions):
-    note_links = NotesAnalyzer.detect_note_links(event)
+    note_links = NotesAnalyzer.get_note_links(event)
     frontmatter = build_activity_frontmatter(event, primary_anchor, secondary_links, note_links)
     key = activity_dedupe_key(event["source_type"], event["source_id"], frontmatter["primary-parent"])
     if key in crm_index.activity_dedupe:
@@ -1057,7 +1383,7 @@ def build_lead_decision(event, participant, decision_type, suggested_status="", 
         "participant_name": participant.get("name") or participant["email"],
         "anchor": anchor,
         "source_event_summary": summarize_text(event.get("body_text") or event.get("snippet", ""), 260),
-        "meeting_notes_summary": NotesAnalyzer.build_notes_summary(NotesAnalyzer.detect_note_links(event)),
+        "meeting_notes_summary": NotesAnalyzer.get_note_summary(event),
         "derived_recommendation": "",
     }
     if decision_type == "create_lead":
@@ -1092,7 +1418,7 @@ def build_opportunity_suggestion(event, parent_record, parent_kind, rank=1, prim
         "workstream_evidence": summarize_text(event.get("body_text") or event.get("snippet", ""), 260),
         "rationale": "Commercial intent or explicit workstream formation detected.",
         "source_event_summary": summarize_text(event.get("body_text") or event.get("snippet", ""), 260),
-        "meeting_notes_summary": NotesAnalyzer.build_notes_summary(NotesAnalyzer.detect_note_links(event)),
+        "meeting_notes_summary": NotesAnalyzer.get_note_summary(event),
         "derived_recommendation": f"Create or review a new opportunity suggestion for {proposed_name}.",
     }
 
@@ -1107,7 +1433,7 @@ def build_task_suggestion(event, parent_link, task_type, content, matched_task=N
         "relationship_context": parent_link,
         "task_type": task_type,
         "source_event_summary": summarize_text(event.get("body_text") or event.get("snippet", ""), 240),
-        "meeting_notes_summary": NotesAnalyzer.build_notes_summary(NotesAnalyzer.detect_note_links(event)),
+        "meeting_notes_summary": NotesAnalyzer.get_note_summary(event),
         "derived_recommendation": "",
     }
     if task_type == "task_completion_suggestion":
@@ -1263,6 +1589,7 @@ def main():
     resolver = EntityResolver(crm_index, noise_domains, service_domains, noise_prefixes)
     inferrer = InteractionInferrer()
     task_analyzer = TaskAnalyzer(crm_index)
+    meeting_notes_resolver = DriveMeetingNotesResolver(crm_index)
 
     activity_updates = []
     contact_discoveries = []
@@ -1288,10 +1615,6 @@ def main():
 
         participants = external_participants(event, resolver)
         resolutions = [resolver.resolve_participant(participant) for participant in participants]
-        signals = inferrer.infer_signals(event.get("body_text", ""), event.get("subject_or_title", ""), event.get("source_type", "gmail"))
-        note_links = NotesAnalyzer.detect_note_links(event)
-        if note_links:
-            signals.append("meeting_notes_detected")
 
         if event["source_type"] == "calendar" and not likely_calendar_relevant(event, resolutions):
             audit_log["ignored"] += 1
@@ -1300,6 +1623,13 @@ def main():
 
         primary_anchor = choose_primary_anchor(event, resolutions, crm_index)
         secondary_links = build_secondary_links(primary_anchor, resolutions)
+        event["_notes_context"] = meeting_notes_resolver.resolve_for_event(event, primary_anchor, secondary_links)
+        combined_text = NotesAnalyzer.combined_event_text(event)
+        signals = inferrer.infer_signals(combined_text, event.get("subject_or_title", ""), event.get("source_type", "gmail"))
+        if NotesAnalyzer.get_note_links(event):
+            signals.append("meeting_notes_detected")
+        if event["_notes_context"].get("looked_up"):
+            signals.append("drive_notes_lookup_attempted")
 
         if primary_anchor:
             activity_update = {
@@ -1315,6 +1645,7 @@ def main():
                 "primary_parent_type": primary_anchor["type"],
                 "secondary_links": secondary_links,
                 "signals": signals,
+                "meeting_notes_summary": NotesAnalyzer.get_note_summary(event),
             }
             if args.autonomous or args.auto_tier >= 1:
                 write_result = maybe_write_activity(event, primary_anchor, secondary_links, crm_index, resolutions)
@@ -1347,7 +1678,7 @@ def main():
                 )
 
         if primary_anchor:
-            for item in task_analyzer.extract_action_items(event.get("body_text", "")):
+            for item in task_analyzer.extract_action_items(combined_text):
                 task_type = "committed_action" if task_analyzer.looks_owner_assigned(item) else "suggested_follow_up"
                 task_suggestions.append(build_task_suggestion(event, primary_anchor["record"]["link"] if primary_anchor else "", task_type, item))
 

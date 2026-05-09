@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import UTC, date, datetime, timedelta
 from urllib.parse import urlparse
 
@@ -23,11 +24,13 @@ try:
     from frontmatter_utils import (
         bucketed_record_path,
         dated_record_id,
+        find_markdown_file,
         iter_markdown_files,
         load_frontmatter_file,
         slugify,
         write_frontmatter_file,
     )
+    from navigation_manager import record_mutation
 except ImportError:
     def dated_record_id(record_date, title):
         safe = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
@@ -42,11 +45,21 @@ except ImportError:
                 if name.endswith(".md"):
                     yield os.path.join(root, name)
 
+    def find_markdown_file(directory, stem):
+        target_name = f"{stem}.md"
+        for file_path in iter_markdown_files(directory):
+            if os.path.basename(file_path) == target_name:
+                return file_path
+        return None
+
     def load_frontmatter_file(path):
         return {}, ""
 
     def write_frontmatter_file(path, frontmatter, body):
         raise RuntimeError("frontmatter_utils not available")
+
+    def record_mutation(*args, **kwargs):
+        return None
 
     def bucketed_record_path(base_dir, record_date, file_name):
         return os.path.join(base_dir, file_name)
@@ -135,6 +148,12 @@ NOISE_REVIEW_PATH = os.path.join(STAGING_DIR, "noise_review.json")
 INGESTION_AUDIT_PATH = os.path.join(STAGING_DIR, "ingestion_audit.json")
 LEGACY_WORKSPACE_UPDATES_PATH = os.path.join(STAGING_DIR, "workspace_updates.json")
 LEGACY_DISCOVERY_PATH = os.path.join(STAGING_DIR, "discovery.json")
+DRIVE_DOCUMENT_UPDATES_PATH = os.path.join(STAGING_DIR, "drive_document_updates.json")
+GRANOLA_UPDATES_PATH = os.path.join(STAGING_DIR, "granola_updates.json")
+DEFAULT_CRM_DRIVE_LABEL_IDS = ["3qkuqYdjtgsnmboRjKmMiGOHl1MFONMnSuaSNNEbbFcb"]
+GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
+DEFAULT_GRANOLA_LOOKBACK_DAYS = 7
+GRANOLA_POST_INGEST_TIMEOUT_SECONDS = 180
 
 
 def ensure_dirs():
@@ -156,6 +175,34 @@ def load_json(path, default):
 def load_settings():
     settings = load_json(SETTINGS_PATH, {})
     return settings if isinstance(settings, dict) else {}
+
+
+def resolve_crm_drive_label_ids():
+    settings = load_settings()
+    configured = settings.get("crm_drive_label_ids")
+    if isinstance(configured, list):
+        ids = [str(item).strip() for item in configured if str(item).strip()]
+        if ids:
+            return ids
+    return list(DEFAULT_CRM_DRIVE_LABEL_IDS)
+
+
+def granola_post_ingest_enabled():
+    settings = load_settings()
+    value = settings.get("granola_post_ingest_enabled")
+    if value is None:
+        return True
+    return bool(value)
+
+
+def granola_initial_lookback_days():
+    settings = load_settings()
+    value = settings.get("granola_post_ingest_lookback_days")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_GRANOLA_LOOKBACK_DAYS
+    return max(1, min(parsed, 30))
 
 
 def resolve_own_emails():
@@ -289,6 +336,30 @@ def extract_message_text(payload):
     return ""
 
 
+def extract_attachment_names(payload):
+    names = []
+
+    def walk_parts(part):
+        filename = str(part.get("filename") or "").strip()
+        body = part.get("body", {}) or {}
+        attachment_id = body.get("attachmentId")
+        if filename and attachment_id:
+            names.append(filename)
+        for child in part.get("parts", []) or []:
+            walk_parts(child)
+
+    walk_parts(payload or {})
+    unique = []
+    seen = set()
+    for name in names:
+        lowered = name.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        unique.append(name)
+    return unique
+
+
 def extract_urls(text):
     return re.findall(r"https?://[^\s>)]+", text or "")
 
@@ -321,6 +392,17 @@ def domain_from_url(url):
         return host.split("/")[0]
     except Exception:
         return ""
+
+
+def extract_google_doc_id(value):
+    match = re.search(r"/document/d/([A-Za-z0-9_-]+)", str(value or ""))
+    if match:
+        return match.group(1)
+    text = str(value or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9_-]{20,}", text):
+        return text
+    match = re.search(r"drive-doc:([A-Za-z0-9_-]{20,})", text)
+    return match.group(1) if match else ""
 
 
 def professional_signal_count(text):
@@ -363,6 +445,33 @@ def sort_timestamp(value):
         return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
     except Exception:
         return 0.0
+
+
+def build_thread_context(history):
+    prior_subjects = []
+    prior_outbound = []
+    prior_inbound = []
+    prior_attachments = []
+    for item in history[-6:]:
+        subject = str(item.get("subject_or_title", "")).strip()
+        body = str(item.get("body_text") or item.get("snippet") or "").strip()
+        attachment_text = " ".join(item.get("attachment_names", []) or [])
+        combined = "\n".join(part for part in [subject, body, attachment_text] if part).strip()
+        if subject and subject not in prior_subjects:
+            prior_subjects.append(subject)
+        if item.get("direction") == "outbound" and combined:
+            prior_outbound.append(combined)
+        elif item.get("direction") == "inbound" and combined:
+            prior_inbound.append(combined)
+        prior_attachments.extend(item.get("attachment_names", []) or [])
+
+    return {
+        "message_count": len(history),
+        "prior_subjects": "\n".join(prior_subjects[-3:]),
+        "prior_outbound_text": "\n\n".join(prior_outbound[-3:]),
+        "prior_inbound_text": "\n\n".join(prior_inbound[-3:]),
+        "prior_attachment_names": prior_attachments[-6:],
+    }
 
 
 class SourceHarvester:
@@ -419,11 +528,45 @@ class SourceHarvester:
                 events.append(item)
         return events
 
+    def get_labeled_drive_documents(self, label_ids):
+        if not label_ids:
+            return []
+
+        label_clauses = [f"'labels/{label_id}' in labels" for label_id in label_ids if str(label_id).strip()]
+        if not label_clauses:
+            return []
+        modified_after = self.since_dt.isoformat().replace("+00:00", "Z")
+        query = (
+            "(" + " or ".join(label_clauses) + ")"
+            + f" and trashed=false and mimeType='{GOOGLE_DOC_MIME}' and modifiedTime > '{modified_after}'"
+        )
+        payload = run_gws(
+            [
+                "gws",
+                "drive",
+                "files",
+                "list",
+                "--params",
+                json.dumps(
+                    {
+                        "q": query,
+                        "pageSize": 50,
+                        "supportsAllDrives": True,
+                        "includeItemsFromAllDrives": True,
+                        "orderBy": "modifiedTime asc",
+                        "fields": "files(id,name,mimeType,modifiedTime,webViewLink)",
+                    }
+                ),
+            ]
+        )
+        return payload.get("files", []) if isinstance(payload, dict) else []
+
 
 class EventNormalizer:
     @staticmethod
     def normalize_gmail(msg):
         headers = {header["name"]: header["value"] for header in msg.get("payload", {}).get("headers", [])}
+        payload = msg.get("payload", {})
         participants = []
         seen = set()
 
@@ -448,8 +591,11 @@ class EventNormalizer:
             "direction": "outbound" if sender in OWN_EMAILS else "inbound",
             "participants": participants,
             "subject_or_title": headers.get("Subject", "(no subject)"),
-            "body_text": extract_message_text(msg.get("payload", {})),
+            "body_text": extract_message_text(payload),
             "snippet": msg.get("snippet", ""),
+            "attachment_names": extract_attachment_names(payload),
+            "references": headers.get("References", ""),
+            "in_reply_to": headers.get("In-Reply-To", ""),
             "raw_payload_ref": msg["id"],
         }
 
@@ -478,7 +624,27 @@ class EventNormalizer:
             "subject_or_title": event.get("summary", "(untitled event)"),
             "body_text": event.get("description", ""),
             "snippet": summarize_text(event.get("description", ""), 160),
+            "attachment_names": [str(item.get("title") or item.get("fileUrl") or "").strip() for item in event.get("attachments", []) if str(item.get("title") or item.get("fileUrl") or "").strip()],
+            "organizer_email": (event.get("organizer", {}) or {}).get("email", "").lower(),
             "raw_payload_ref": event["id"],
+        }
+
+    @staticmethod
+    def normalize_drive_file(file_item, body_text):
+        modified_time = str(file_item.get("modifiedTime") or "")
+        return {
+            "source_type": "drive",
+            "source_id": str(file_item.get("id") or ""),
+            "source_link": str(file_item.get("webViewLink") or ""),
+            "thread_id": None,
+            "event_time": modified_time,
+            "direction": "document",
+            "participants": [],
+            "subject_or_title": str(file_item.get("name") or "(untitled document)"),
+            "body_text": body_text,
+            "snippet": summarize_text(body_text, 160),
+            "attachment_names": [],
+            "raw_payload_ref": str(file_item.get("id") or ""),
         }
 
 
@@ -493,13 +659,25 @@ class CRMIndex:
         self.linked_records = {}
         self.open_tasks = []
         self.open_tasks_by_link = {}
+        self.task_records = []
+        self.task_source_refs = {}
         self.activities = []
         self.activity_dedupe = {}
+        self.activity_source_refs = {}
         self.activity_history_by_email = {}
+        self.notes = []
+        self.drive_ingestion_markers = {}
+        self.all_records = []
 
     def add_linked_record(self, record):
         for variant in link_variants(record["link"]):
             self.linked_records[variant] = record
+
+    def mark_drive_ingestion(self, key, timestamp):
+        if not key:
+            return
+        existing = self.drive_ingestion_markers.get(key, 0.0)
+        self.drive_ingestion_markers[key] = max(existing, timestamp)
 
 
 def choose_display_name(frontmatter, rel_path):
@@ -526,9 +704,26 @@ def build_company_context(record_type, record, frontmatter):
     }
 
 
+def record_drive_ingestion_markers(index, frontmatter):
+    marker_ts = sort_timestamp(frontmatter.get("date-modified") or frontmatter.get("date-created") or frontmatter.get("date") or "")
+    source_ref = str(frontmatter.get("source-ref", "")).strip()
+    if source_ref:
+        index.mark_drive_ingestion(source_ref, marker_ts)
+        doc_id = extract_google_doc_id(source_ref)
+        if doc_id:
+            index.mark_drive_ingestion(doc_id, marker_ts)
+
+    meeting_notes = str(frontmatter.get("meeting-notes", "")).strip()
+    if meeting_notes:
+        index.mark_drive_ingestion(meeting_notes, marker_ts)
+        doc_id = extract_google_doc_id(meeting_notes)
+        if doc_id:
+            index.mark_drive_ingestion(doc_id, marker_ts)
+
+
 def get_crm_index():
     index = CRMIndex()
-    directories = ["Organizations", "Accounts", "Contacts", "Leads", "Opportunities", "Tasks", "Activities"]
+    directories = ["Organizations", "Accounts", "Contacts", "Leads", "Opportunities", "Tasks", "Activities", "Notes"]
     for directory in directories:
         base_dir = os.path.join(CRM_DATA_PATH, directory)
         for file_path in iter_markdown_files(base_dir):
@@ -544,6 +739,7 @@ def get_crm_index():
                 "name": choose_display_name(frontmatter, rel_path),
             }
             index.add_linked_record(record)
+            index.all_records.append(record)
 
             if directory == "Contacts":
                 for email in parse_email_addresses(frontmatter.get("email", "")):
@@ -566,16 +762,23 @@ def get_crm_index():
                         if variant:
                             index.opportunities_by_contact.setdefault(variant, []).append(record)
             elif directory == "Tasks":
+                index.task_records.append(record)
+                task_source_ref = str(frontmatter.get("source-ref", "")).strip()
+                if task_source_ref:
+                    index.task_source_refs.setdefault(task_source_ref, []).append(record)
                 if str(frontmatter.get("status", "")).lower() in ACTIVITY_WRITE_STATUSES:
                     index.open_tasks.append(record)
                     for link_field in ["opportunity", "account", "contact", "lead", "primary-parent"]:
                         for variant in link_variants(frontmatter.get(link_field)):
                             index.open_tasks_by_link.setdefault(variant, []).append(record)
+                record_drive_ingestion_markers(index, frontmatter)
             elif directory == "Activities":
                 index.activities.append(record)
                 source_type = str(frontmatter.get("source", "")).lower()
                 source_ref = str(frontmatter.get("source-ref", "")).strip()
                 primary_parent = normalize_link(frontmatter.get("primary-parent"))
+                if source_ref:
+                    index.activity_source_refs.setdefault(source_ref, []).append(record)
                 if source_type and source_ref and primary_parent:
                     key = f"{source_type}|{source_ref}|{canonical_key(primary_parent)}"
                     index.activity_dedupe[key] = record
@@ -583,6 +786,10 @@ def get_crm_index():
                 for email, contact in index.contacts_by_email.items():
                     if contact["name"].lower() in text:
                         index.activity_history_by_email.setdefault(email, []).append(record)
+                record_drive_ingestion_markers(index, frontmatter)
+            elif directory == "Notes":
+                index.notes.append(record)
+                record_drive_ingestion_markers(index, frontmatter)
     return index
 
 
@@ -1041,14 +1248,33 @@ class TaskAnalyzer:
         tokens = re.findall(r"[a-z0-9]{4,}", (text or "").lower())
         return {token for token in tokens if token not in stopwords}
 
+    @staticmethod
+    def event_text(event, include_thread=True):
+        parts = [
+            event.get("subject_or_title", ""),
+            event.get("body_text", ""),
+            event.get("snippet", ""),
+            " ".join(event.get("attachment_names", []) or []),
+        ]
+        if include_thread:
+            thread_context = event.get("_thread_context", {}) or {}
+            parts.extend(
+                [
+                    thread_context.get("prior_subjects", ""),
+                    thread_context.get("prior_outbound_text", ""),
+                    thread_context.get("prior_inbound_text", ""),
+                    " ".join(thread_context.get("prior_attachment_names", []) or []),
+                ]
+            )
+        return "\n".join(part for part in parts if part).strip()
+
+    @staticmethod
+    def sentence_candidates(text):
+        raw_sentences = re.split(r"(?<=[.!?])\s+|\n+", text or "")
+        return [sentence.strip(" -\t") for sentence in raw_sentences if 8 <= len(sentence.strip()) <= 240]
+
     def task_relevance_score(self, event, task):
-        event_text = " ".join(
-            [
-                event.get("subject_or_title", ""),
-                event.get("body_text", ""),
-                event.get("snippet", ""),
-            ]
-        )
+        event_text = self.event_text(event)
         task_text = " ".join(
             [
                 task.get("name", ""),
@@ -1063,6 +1289,8 @@ class TaskAnalyzer:
             return 0.25
         if len(overlap) == 1:
             return 0.15
+        if any(token in event_text.lower() for token in self._relevance_tokens(task_text)):
+            return 0.1
         return 0.0
 
     @staticmethod
@@ -1071,12 +1299,19 @@ class TaskAnalyzer:
         patterns = [
             r"(?:I will|I'll|Please|Action item|Next steps?|Task):?\s*(.*)",
             r"(?:\n|^)\s*[-*]\s+(.*(?:follow up|send|check|call|meeting|review|share|draft|intro).*)",
+            r"(?:\bwe should\b|\byou should\b|\bneed to\b|\bcan you\b|\blet's\b)\s+(.*)",
         ]
         for pattern in patterns:
             for match in re.findall(pattern, text or "", re.I):
                 line = match.split("\n")[0].strip()
                 if 12 <= len(line) <= 220 and not any(re.search(pattern, line, re.I) for pattern in TASK_NOISE_PATTERNS):
                     items.append(line)
+        for sentence in TaskAnalyzer.sentence_candidates(text):
+            if not re.search(r"\b(follow up|send|share|draft|review|introduce|intro|schedule|set up|book|confirm|check in|circle back|prepare|connect)\b", sentence, re.I):
+                continue
+            if any(re.search(pattern, sentence, re.I) for pattern in TASK_NOISE_PATTERNS):
+                continue
+            items.append(sentence)
         unique = []
         for item in items:
             if item not in unique:
@@ -1085,32 +1320,66 @@ class TaskAnalyzer:
 
     @staticmethod
     def looks_owner_assigned(text):
-        return bool(re.search(r"\b(i will|i'll|john to|please send to me|please review|please draft|please follow up)\b", text or "", re.I))
+        return bool(
+            re.search(
+                r"\b(i will|i'll|john to|please send to me|please review|please draft|please follow up|i can|i should|let me)\b",
+                text or "",
+                re.I,
+            )
+        )
 
     @staticmethod
-    def completion_confidence(text, event_type):
+    def completion_confidence(text, event_type, metadata_text=""):
         score = 0.0
-        lowered = (text or "").lower()
+        lowered = " ".join([text or "", metadata_text or ""]).lower()
         if any(re.search(pattern, lowered, re.I) for pattern in TASK_NOISE_PATTERNS):
             return 0.0
         if any(word in lowered for word in ["done", "completed", "scheduled", "sent", "attached", "reviewed", "confirmed"]):
             score += 0.55
+        if re.search(r"\b(attached|attachment|see attached|shared here|sending over)\b", lowered):
+            score += 0.15
+        if re.search(r"\b(calendar invite|invite sent|booked for|scheduled for|see you on)\b", lowered):
+            score += 0.2
         if event_type == "calendar":
             score += 0.2
         return min(score, 0.95)
 
+    @staticmethod
+    def prior_commitment_score(event, task):
+        thread_context = event.get("_thread_context", {}) or {}
+        prior_outbound = thread_context.get("prior_outbound_text", "")
+        if not prior_outbound:
+            return 0.0
+
+        task_name = (task.get("name") or "").lower()
+        task_tokens = TaskAnalyzer._relevance_tokens(task_name)
+        prior_tokens = TaskAnalyzer._relevance_tokens(prior_outbound)
+        overlap = task_tokens & prior_tokens
+        score = 0.0
+        if overlap:
+            score += 0.2
+        if re.search(r"\b(i will|i'll|let me|i can|i should|john to)\b", prior_outbound, re.I):
+            score += 0.15
+        if any(word in task_name for word in ["send", "share", "draft", "introduce", "intro", "schedule", "confirm", "follow"]):
+            score += 0.1
+        return min(score, 0.35)
+
     def completion_confidence_for_task(self, event, task):
-        base = self.completion_confidence(event.get("body_text", ""), event["source_type"])
+        metadata_text = " ".join(event.get("attachment_names", []) or [])
+        base = self.completion_confidence(self.event_text(event, include_thread=False), event["source_type"], metadata_text)
         relevance = self.task_relevance_score(event, task)
         if relevance == 0.0:
             return 0.0
 
         score = base + relevance
+        score += self.prior_commitment_score(event, task)
         if event.get("direction") == "outbound":
             score += 0.2
             task_name = (task.get("name") or "").lower()
             if any(word in task_name for word in ["send", "introduce", "intro", "nudge", "request", "outline", "follow"]):
                 score += 0.1
+        elif event.get("direction") == "inbound" and re.search(r"\b(thanks|received|looks good|works for me|confirmed)\b", self.event_text(event, include_thread=False), re.I):
+            score += 0.1
         return min(score, 0.95)
 
 
@@ -1218,9 +1487,15 @@ def build_activity_frontmatter(event, primary_anchor, secondary_links, note_link
     activity_name = title
     if source_type == "calendar":
         activity_type = "meeting"
+    elif source_type == "drive":
+        activity_type = "meeting" if re.search(r"\b(meeting|call|sync|catch up|checkpoint|debrief|board)\b", title, re.I) else "analysis"
     else:
         activity_type = "email"
-    activity_id = dated_record_id(event_date, title)
+    if source_type == "drive":
+        activity_id = dated_record_id(event_date, f"{title} {event['source_id'][:8]} {event_date}")
+    else:
+        activity_id = dated_record_id(event_date, title)
+    source_ref = drive_source_ref(event["source_id"], event["event_time"]) if source_type == "drive" else event["source_id"]
     return {
         "id": activity_id,
         "activity-name": title,
@@ -1232,7 +1507,7 @@ def build_activity_frontmatter(event, primary_anchor, secondary_links, note_link
         "primary-parent": primary_anchor["record"]["link"],
         "secondary-links": secondary_links,
         "source": source_type,
-        "source-ref": event["source_id"],
+        "source-ref": source_ref,
         "email-link": event["source_link"] if source_type == "gmail" else "",
         "meeting-notes": note_links[0] if note_links else "",
         "date-created": iso_today(),
@@ -1281,7 +1556,7 @@ def activity_dedupe_key(source_type, source_id, primary_parent):
 def maybe_write_activity(event, primary_anchor, secondary_links, crm_index, resolutions):
     note_links = NotesAnalyzer.get_note_links(event)
     frontmatter = build_activity_frontmatter(event, primary_anchor, secondary_links, note_links)
-    key = activity_dedupe_key(event["source_type"], event["source_id"], frontmatter["primary-parent"])
+    key = activity_dedupe_key(event["source_type"], frontmatter["source-ref"], frontmatter["primary-parent"])
     if key in crm_index.activity_dedupe:
         return {"written": False, "duplicate": True, "existing": crm_index.activity_dedupe[key]}
 
@@ -1300,7 +1575,697 @@ def maybe_write_activity(event, primary_anchor, secondary_links, crm_index, reso
         "name": frontmatter["activity-name"],
     }
     crm_index.activity_dedupe[key] = record
+    if event["source_type"] == "drive":
+        marker_ts = sort_timestamp(event["event_time"])
+        crm_index.mark_drive_ingestion(frontmatter["source-ref"], marker_ts)
+        crm_index.mark_drive_ingestion(event["source_id"], marker_ts)
+        if event.get("source_link"):
+            crm_index.mark_drive_ingestion(event["source_link"], marker_ts)
     return {"written": True, "duplicate": False, "record": record, "note_links": note_links}
+
+
+def drive_source_ref(file_id, modified_time):
+    return f"drive-doc:{file_id}:{modified_time}"
+
+
+def infer_anchor_from_text(title, text, crm_index):
+    combined = f"{title}\n{text}".lower()
+    combined_tokens = set(search_tokens(combined, limit=40))
+    candidates = []
+    seen = set()
+    type_priority = {"opportunity": 0, "contact": 1, "lead": 2, "account": 3, "organization": 4}
+
+    for record in crm_index.all_records:
+        record_type = str(record.get("type", "")).lower()
+        if record_type not in type_priority:
+            continue
+        if record["link"] in seen:
+            continue
+        seen.add(record["link"])
+        name = str(record.get("name", "")).strip()
+        if not name:
+            continue
+        score = 0
+        lowered_name = name.lower()
+        if lowered_name in combined:
+            score += 5
+        name_tokens = set(search_tokens(name, limit=8))
+        overlap = combined_tokens & name_tokens
+        score += len(overlap)
+        if record_type == "opportunity":
+            for keyword in [record["frontmatter"].get("product-service", ""), record["frontmatter"].get("opportunity-type", "")]:
+                if keyword and str(keyword).lower() in combined:
+                    score += 1
+        if score > 0:
+            candidates.append((score, type_priority[record_type], record))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]["name"]))
+    record = candidates[0][2]
+    return {"type": str(record.get("type", "")).lower(), "record": record}
+
+
+def already_ingested_drive_doc(crm_index, file_id, source_link, modified_time):
+    modified_ts = sort_timestamp(modified_time)
+    keys = [file_id, source_link, drive_source_ref(file_id, modified_time)]
+    for key in keys:
+        if not key:
+            continue
+        if crm_index.drive_ingestion_markers.get(key, 0.0) >= modified_ts:
+            return True
+    return False
+
+
+def classify_drive_document(event, signals, action_items):
+    title = str(event.get("subject_or_title", ""))
+    combined = f"{title}\n{event.get('body_text', '')}"
+    if re.search(r"\b(meeting|call|sync|catch up|debrief|board|minutes|notes)\b", combined, re.I):
+        return "activity"
+    if action_items and re.search(r"\b(next steps|action items?|todo|to do|follow up)\b", combined, re.I):
+        return "note"
+    if "commercial_intent" in signals or "meeting_detected" in signals or "logistics_detected" in signals:
+        return "activity"
+    return "note"
+
+
+def build_note_frontmatter(event, primary_anchor, secondary_links):
+    event_date = event["event_time"][:10]
+    note_id = slugify(f"{event_date}-{event['subject_or_title']}-{event['source_id'][:8]}")
+    return {
+        "id": note_id,
+        "title": event["subject_or_title"],
+        "owner": "john",
+        "primary-parent-type": primary_anchor["type"],
+        "primary-parent": primary_anchor["record"]["link"],
+        "secondary-links": secondary_links,
+        "source": event["source_type"],
+        "source-ref": drive_source_ref(event["source_id"], event["event_time"]),
+        "date-created": iso_today(),
+        "date-modified": iso_today(),
+    }
+
+
+def build_note_body(event):
+    source_summary = summarize_text(event.get("body_text") or event.get("snippet", ""), 1400)
+    lines = [
+        f"# **Note: {event['subject_or_title']}**",
+        "",
+        "## **Context**",
+        source_summary or "Imported from labeled Google Drive document.",
+        "",
+        "## **Implications**",
+        f"- Source document: {event.get('source_link', '')}".rstrip(),
+        f"- Updated: {event.get('event_time', '')[:10]}".rstrip(),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def maybe_write_note(event, primary_anchor, secondary_links, crm_index):
+    if already_ingested_drive_doc(crm_index, event["source_id"], event.get("source_link", ""), event["event_time"]):
+        return {"written": False, "duplicate": True}
+    frontmatter = build_note_frontmatter(event, primary_anchor, secondary_links)
+    file_name = f"{frontmatter['id']}.md"
+    note_dir = os.path.join(CRM_DATA_PATH, "Notes")
+    file_path = bucketed_record_path(note_dir, event["event_time"][:10], file_name)
+    body = build_note_body(event)
+    write_frontmatter_file(file_path, frontmatter, body)
+    record = {
+        "type": "Note",
+        "file_path": file_path,
+        "rel_path": os.path.relpath(file_path, CRM_DATA_PATH),
+        "link": wikilink_for_path(file_path),
+        "frontmatter": frontmatter,
+        "body": body,
+        "name": frontmatter["title"],
+    }
+    crm_index.notes.append(record)
+    crm_index.mark_drive_ingestion(frontmatter["source-ref"], sort_timestamp(event["event_time"]))
+    crm_index.mark_drive_ingestion(event["source_id"], sort_timestamp(event["event_time"]))
+    if event.get("source_link"):
+        crm_index.mark_drive_ingestion(event["source_link"], sort_timestamp(event["event_time"]))
+    return {"written": True, "duplicate": False, "record": record}
+
+
+def extract_json_payload(text):
+    raw = str(text or "").strip()
+    if not raw:
+        raise ValueError("empty JSON payload")
+    fence_match = re.search(r"```(?:json)?\s*(.+?)```", raw, re.DOTALL | re.I)
+    if fence_match:
+        raw = fence_match.group(1).strip()
+    for candidate in (raw,):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+    bounds = []
+    if "{" in raw and "}" in raw:
+        bounds.append((raw.find("{"), raw.rfind("}") + 1))
+    if "[" in raw and "]" in raw:
+        bounds.append((raw.find("["), raw.rfind("]") + 1))
+    for start, end in bounds:
+        snippet = raw[start:end].strip()
+        if not snippet:
+            continue
+        try:
+            return json.loads(snippet)
+        except json.JSONDecodeError:
+            continue
+    raise ValueError("unable to parse JSON payload from Codex output")
+
+
+def run_codex(prompt, timeout_seconds=GRANOLA_POST_INGEST_TIMEOUT_SECONDS):
+    output_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".json") as handle:
+            output_path = handle.name
+        result = subprocess.run(
+            [
+                "codex",
+                "-a",
+                "never",
+                "exec",
+                "-C",
+                PROJECT_ROOT,
+                "--skip-git-repo-check",
+                "--sandbox",
+                "read-only",
+                "--output-last-message",
+                output_path,
+                prompt,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+        if result.returncode != 0:
+            error_text = result.stderr.strip() or result.stdout.strip() or "codex exec failed"
+            raise RuntimeError(error_text)
+        with open(output_path, "r", encoding="utf-8") as handle:
+            return handle.read()
+    finally:
+        if output_path and os.path.exists(output_path):
+            os.unlink(output_path)
+
+
+def granola_activity_source_ref(meeting_date, title):
+    return f"granola:{meeting_date}:{slugify(title)}"
+
+
+def granola_task_source_ref(meeting_date, title, action_item):
+    return f"{granola_activity_source_ref(meeting_date, title)}:task:{slugify(action_item)[:48]}"
+
+
+def normalize_iso_datetime(value, fallback_date):
+    text = str(value or "").strip()
+    if not text:
+        text = str(fallback_date)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return f"{text}T12:00:00+00:00"
+    if text.endswith("Z"):
+        return text.replace("Z", "+00:00")
+    return text
+
+
+def normalize_granola_meetings(payload):
+    if isinstance(payload, dict):
+        meetings = payload.get("meetings") or payload.get("items") or []
+    elif isinstance(payload, list):
+        meetings = payload
+    else:
+        meetings = []
+
+    normalized = []
+    for item in meetings:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        meeting_date = str(item.get("date") or item.get("meeting_date") or "").strip()[:10]
+        if not title or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", meeting_date):
+            continue
+        attendees = []
+        for attendee in item.get("attendees") or []:
+            name = str(attendee or "").strip()
+            if name and name not in attendees:
+                attendees.append(name)
+        action_items = []
+        for action_item in item.get("action_items") or []:
+            text = str(action_item or "").strip().strip("-").strip()
+            if text and text not in action_items:
+                action_items.append(text.rstrip(".") + ("." if not text.endswith(".") else ""))
+        summary = str(item.get("summary") or "").strip()
+        notes_url = str(item.get("notes_url") or item.get("source_link") or item.get("url") or "").strip()
+        normalized.append(
+            {
+                "title": title,
+                "date": meeting_date,
+                "attendees": attendees,
+                "summary": summary,
+                "action_items": action_items,
+                "notes_url": notes_url,
+                "event_time": normalize_iso_datetime(item.get("event_time"), meeting_date),
+            }
+        )
+    return normalized
+
+
+def fetch_granola_meetings(since_date, until_date):
+    prompt = (
+        "Use the connected Granola MCP.\n"
+        f"Find CRM-relevant meetings from {since_date} through {until_date} inclusive.\n"
+        "Return JSON only with this shape: "
+        '{"meetings":[{"title":"", "date":"YYYY-MM-DD", "attendees":[""], "summary":"", "action_items":[""], "notes_url":""}]}. '
+        "Only include meetings likely relevant to business, relationship, fundraising, advisory, or deal work. "
+        "For action_items, include only clear follow-up items John Januszczak should own or actively track. "
+        'Use [] when there are no such action items. Use "" when the notes URL is unavailable. Do not include markdown or commentary.'
+    )
+    return normalize_granola_meetings(extract_json_payload(run_codex(prompt)))
+
+
+def granola_event_from_meeting(meeting):
+    attendees = [{"email": "", "name": name, "role": "attendee"} for name in meeting.get("attendees", [])]
+    summary = str(meeting.get("summary") or "").strip()
+    action_items = [str(item).strip() for item in meeting.get("action_items", []) if str(item).strip()]
+    body_parts = []
+    if summary:
+        body_parts.append(summary)
+    if attendees:
+        body_parts.append("Attendees: " + ", ".join(name["name"] for name in attendees))
+    if action_items:
+        body_parts.append("Action items:\n" + "\n".join(f"- {item}" for item in action_items))
+    source_ref = granola_activity_source_ref(meeting["date"], meeting["title"])
+    return {
+        "source_type": "granola",
+        "source_id": source_ref,
+        "source_link": meeting.get("notes_url", ""),
+        "thread_id": None,
+        "event_time": meeting.get("event_time", normalize_iso_datetime("", meeting["date"])),
+        "direction": "meeting",
+        "participants": attendees,
+        "subject_or_title": meeting["title"],
+        "body_text": "\n\n".join(part for part in body_parts if part),
+        "snippet": summarize_text(summary, 160),
+        "attachment_names": [],
+        "raw_payload_ref": meeting.get("notes_url") or source_ref,
+        "_granola_summary": summary,
+        "_granola_action_items": action_items,
+    }
+
+
+def granola_anchor_for_event(event, crm_index):
+    attendee_text = " ".join(participant.get("name", "") for participant in event.get("participants", []))
+    title = event.get("subject_or_title", "")
+    body_text = event.get("body_text", "")
+    return infer_anchor_from_text(title, f"{body_text}\n{attendee_text}", crm_index)
+
+
+def granola_secondary_links(primary_anchor, crm_index):
+    if not primary_anchor:
+        return []
+    links = []
+    record = primary_anchor["record"]
+    frontmatter = record.get("frontmatter", {})
+    if primary_anchor["type"] == "contact":
+        if frontmatter.get("account"):
+            links.append(frontmatter.get("account"))
+        for variant in link_variants(record["link"]):
+            for opportunity in crm_index.opportunities_by_contact.get(variant, []):
+                links.append(opportunity["link"])
+    elif primary_anchor["type"] == "opportunity":
+        for field in ["primary-contact", "organization", "account"]:
+            if frontmatter.get(field):
+                links.append(frontmatter.get(field))
+        for influencer in as_list(frontmatter.get("influencers")):
+            links.append(influencer)
+    elif primary_anchor["type"] == "account" and frontmatter.get("organization"):
+        links.append(frontmatter.get("organization"))
+    unique = []
+    seen = set()
+    for link in links:
+        normalized = normalize_link(link)
+        if not normalized or normalized == normalize_link(record["link"]) or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(f"[[{normalized}]]" if not str(link).startswith("[[") else str(link))
+    return unique[:8]
+
+
+def granola_activity_body(event, participants):
+    summary = str(event.get("_granola_summary") or "").strip()
+    action_items = list(event.get("_granola_action_items", []))
+    participant_names = ", ".join(participants) if participants else "Not available"
+    lines = [
+        f"# **Activity: {event['subject_or_title']}**",
+        "",
+        "## **Executive Summary / Objective**",
+        summary or "Granola meeting imported during post-ingest CRM enrichment.",
+        "",
+        "## **Outcomes**",
+        f"- [x] Logged Granola meeting dated {event['event_time'][:10]}.",
+    ]
+    if action_items:
+        lines.append(f"- [x] Captured {len(action_items)} Granola follow-up item(s).")
+    lines.extend(
+        [
+            "",
+            "## **Detailed Notes**",
+            f"* **Participants:** {participant_names}.",
+        ]
+    )
+    if summary:
+        lines.append(f"* **Meeting Summary:** {summary}")
+    if event.get("source_link"):
+        lines.append(f"* **Granola Notes:** {event['source_link']}")
+    if action_items:
+        lines.extend(["", "## **Action Items**"])
+        for item in action_items:
+            lines.append(f"- [ ] {item}")
+    lines.extend(["", "## **Strategic Insights**", "Imported from Granola after the normal Gmail / Calendar / Drive ingest pass."])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def unique_record_path(base_dir, record_date, record_id):
+    candidate_id = record_id
+    suffix = 2
+    while True:
+        file_path = bucketed_record_path(base_dir, record_date, f"{candidate_id}.md")
+        if not os.path.exists(file_path):
+            return candidate_id, file_path
+        candidate_id = f"{record_id}-{suffix}"
+        suffix += 1
+
+
+def write_granola_activity(event, primary_anchor, secondary_links, crm_index):
+    source_ref = granola_activity_source_ref(event["event_time"][:10], event["subject_or_title"])
+    existing = crm_index.activity_source_refs.get(source_ref, [])
+    if existing:
+        return {"written": False, "duplicate": True, "record": existing[0]}
+
+    frontmatter = {
+        "id": "",
+        "activity-name": event["subject_or_title"],
+        "activity-type": "meeting",
+        "status": "completed",
+        "owner": "john",
+        "date": event["event_time"][:10],
+        "primary-parent-type": primary_anchor["type"],
+        "primary-parent": primary_anchor["record"]["link"],
+        "secondary-links": secondary_links,
+        "source": "granola",
+        "source-ref": source_ref,
+        "email-link": "",
+        "meeting-notes": event.get("source_link", ""),
+        "date-created": iso_today(),
+        "date-modified": iso_today(),
+    }
+    activity_dir = os.path.join(CRM_DATA_PATH, "Activities")
+    record_id, file_path = unique_record_path(activity_dir, frontmatter["date"], dated_record_id(frontmatter["date"], event["subject_or_title"]))
+    frontmatter["id"] = record_id
+    body = granola_activity_body(event, [participant.get("name", "") for participant in event.get("participants", []) if participant.get("name")])
+    write_frontmatter_file(file_path, frontmatter, body)
+    record_mutation(
+        action="create",
+        entity_type="Activity",
+        title=frontmatter["activity-name"],
+        path=file_path,
+        source=frontmatter["source"],
+        related=[frontmatter["primary-parent"]] + list(frontmatter.get("secondary-links", []) or []),
+        details="activity-type=meeting; status=completed; granola-post-ingest=true",
+        crm_data_path=CRM_DATA_PATH,
+    )
+    record = {
+        "type": "Activity",
+        "file_path": file_path,
+        "rel_path": os.path.relpath(file_path, CRM_DATA_PATH),
+        "link": wikilink_for_path(file_path),
+        "frontmatter": frontmatter,
+        "body": body,
+        "name": frontmatter["activity-name"],
+    }
+    crm_index.activities.append(record)
+    crm_index.activity_source_refs.setdefault(source_ref, []).append(record)
+    activity_key = activity_dedupe_key("granola", source_ref, frontmatter["primary-parent"])
+    crm_index.activity_dedupe[activity_key] = record
+    return {"written": True, "duplicate": False, "record": record}
+
+
+def granola_task_title(action_item):
+    text = str(action_item or "").strip().lstrip("-").strip()
+    text = re.sub(r"\s+", " ", text)
+    if not text:
+        return ""
+    return text[0].upper() + text[1:]
+
+
+def granola_task_status_and_due(meeting_date, action_item):
+    text = str(action_item or "").lower()
+    meeting_day = datetime.strptime(meeting_date, "%Y-%m-%d").date()
+    today = date.today()
+    if re.search(r"\b(track|monitor|check back|review|watch|wait)\b", text):
+        days = 30 if re.search(r"\b30[- ]day|\b30 days?\b|\bnext 30 days?\b", text) else 7
+        return "waiting", max(today, meeting_day + timedelta(days=days)).strftime("%Y-%m-%d")
+    return "todo", max(today, meeting_day + timedelta(days=2)).strftime("%Y-%m-%d")
+
+
+def granola_task_parent(anchor, secondary_links, crm_index):
+    if anchor and anchor["type"] in {"opportunity", "contact", "account", "lead", "deal"}:
+        return anchor
+    preferred = {"opportunity": 0, "contact": 1, "account": 2, "lead": 3, "deal": 4}
+    for link in secondary_links:
+        normalized = normalize_link(link)
+        record = crm_index.linked_records.get(next(iter(link_variants(normalized)), ""), None)
+        if not record:
+            continue
+        record_type = str(record.get("type", "")).lower()
+        if record_type in preferred:
+            return {"type": record_type, "record": record}
+    return None
+
+
+def task_anchor_variants(task_record):
+    variants = set()
+    for field in ["primary-parent", "account", "contact", "opportunity", "lead"]:
+        variants.update(link_variants(task_record.get("frontmatter", {}).get(field)))
+    return {variant for variant in variants if variant}
+
+
+def granola_task_duplicate(crm_index, task_name, task_source_ref, meeting_source_ref, anchor_links):
+    if task_source_ref in crm_index.task_source_refs:
+        return crm_index.task_source_refs[task_source_ref][0]
+    target_tokens = TaskAnalyzer._relevance_tokens(task_name)
+    meeting_related = crm_index.task_source_refs.get(meeting_source_ref, [])
+    candidates = list(meeting_related) + list(crm_index.task_records)
+    seen = set()
+    for task in candidates:
+        if task["file_path"] in seen:
+            continue
+        seen.add(task["file_path"])
+        if anchor_links and not (task_anchor_variants(task) & anchor_links):
+            continue
+        existing_name = str(task.get("name", "")).strip()
+        overlap = target_tokens & TaskAnalyzer._relevance_tokens(existing_name)
+        if len(overlap) >= 2:
+            return task
+    return None
+
+
+def granola_task_body(task_name, meeting, activity_link):
+    summary = str(meeting.get("summary") or "").strip()
+    context = [f"Granola notes from the {meeting['date']} meeting '{meeting['title']}'."]
+    if summary:
+        context.append(summary)
+    notes = []
+    if activity_link:
+        notes.append(f"Related activity: {activity_link}.")
+    if meeting.get("notes_url"):
+        notes.append(f"Granola notes: {meeting['notes_url']}.")
+    body = "\n".join(
+        [
+            f"# **Task: {task_name}**",
+            "",
+            "## **Description**",
+            task_name,
+            "",
+            "## **Context & Background**",
+            " ".join(context).strip(),
+            "",
+            "## **Notes / Updates**",
+            ("*   " + " ".join(notes).strip()) if notes else "",
+            "",
+            "## **Outcome / Completion Notes**",
+            "",
+            "",
+        ]
+    )
+    return body
+
+
+def write_granola_task(meeting, action_item, parent_anchor, secondary_links, crm_index, activity_link=""):
+    task_name = granola_task_title(action_item)
+    if not task_name:
+        return {"written": False, "duplicate": False, "reason": "blank_task"}
+    source_ref = granola_task_source_ref(meeting["date"], meeting["title"], task_name)
+    meeting_source_ref = granola_activity_source_ref(meeting["date"], meeting["title"])
+    anchor_links = set(link_variants(parent_anchor["record"]["link"]))
+    for link in secondary_links:
+        anchor_links.update(link_variants(link))
+    duplicate = granola_task_duplicate(crm_index, task_name, source_ref, meeting_source_ref, anchor_links)
+    if duplicate:
+        return {"written": False, "duplicate": True, "record": duplicate}
+
+    status, due_date = granola_task_status_and_due(meeting["date"], task_name)
+    frontmatter = {
+        "id": "",
+        "task-name": task_name,
+        "status": status,
+        "priority": "medium",
+        "owner": "john",
+        "due-date": due_date,
+        "date-created": iso_today(),
+        "date-modified": iso_today(),
+        "primary-parent-type": parent_anchor["type"],
+        "primary-parent": parent_anchor["record"]["link"],
+        "account": "",
+        "contact": "",
+        "opportunity": "",
+        "lead": "",
+        "type": "follow-up",
+        "source": "granola",
+        "source-ref": source_ref,
+        "google-task-id": "",
+        "google-task-list-id": "",
+        "email-link": "",
+        "meeting-notes": meeting.get("notes_url", ""),
+    }
+    if parent_anchor["type"] == "account":
+        frontmatter["account"] = parent_anchor["record"]["link"]
+    elif parent_anchor["type"] == "contact":
+        frontmatter["contact"] = parent_anchor["record"]["link"]
+        account_link = parent_anchor["record"]["frontmatter"].get("account")
+        if account_link:
+            frontmatter["account"] = account_link
+    elif parent_anchor["type"] == "opportunity":
+        frontmatter["opportunity"] = parent_anchor["record"]["link"]
+        contact_link = parent_anchor["record"]["frontmatter"].get("primary-contact")
+        account_link = parent_anchor["record"]["frontmatter"].get("account")
+        if contact_link:
+            frontmatter["contact"] = contact_link
+        if account_link:
+            frontmatter["account"] = account_link
+    elif parent_anchor["type"] == "lead":
+        frontmatter["lead"] = parent_anchor["record"]["link"]
+    task_dir = os.path.join(CRM_DATA_PATH, "Tasks")
+    record_id, file_path = unique_record_path(task_dir, due_date, dated_record_id(due_date, task_name))
+    frontmatter["id"] = record_id
+    body = granola_task_body(task_name, meeting, activity_link)
+    write_frontmatter_file(file_path, frontmatter, body)
+    record_mutation(
+        action="create",
+        entity_type="Task",
+        title=frontmatter["task-name"],
+        path=file_path,
+        source=frontmatter["source"],
+        related=[
+            frontmatter.get("primary-parent", ""),
+            frontmatter.get("account", ""),
+            frontmatter.get("contact", ""),
+            frontmatter.get("opportunity", ""),
+            frontmatter.get("lead", ""),
+        ],
+        details=f"status={status}; priority=medium; due-date={due_date}; granola-post-ingest=true",
+        crm_data_path=CRM_DATA_PATH,
+    )
+    record = {
+        "type": "Task",
+        "file_path": file_path,
+        "rel_path": os.path.relpath(file_path, CRM_DATA_PATH),
+        "link": wikilink_for_path(file_path),
+        "frontmatter": frontmatter,
+        "body": body,
+        "name": frontmatter["task-name"],
+    }
+    crm_index.task_records.append(record)
+    crm_index.task_source_refs.setdefault(source_ref, []).append(record)
+    return {"written": True, "duplicate": False, "record": record}
+
+
+def process_granola_post_ingest(args, crm_index, state):
+    granola_updates = []
+    if args.skip_granola or not granola_post_ingest_enabled():
+        return granola_updates, False
+
+    now = datetime.now(UTC).replace(microsecond=0)
+    if args.since:
+        since_date = args.since
+    else:
+        checkpoint = str(state.get("granola_last_sync_at") or "").strip()
+        if checkpoint:
+            since_date = checkpoint[:10]
+        else:
+            since_date = (now.date() - timedelta(days=granola_initial_lookback_days())).strftime("%Y-%m-%d")
+
+    try:
+        meetings = fetch_granola_meetings(since_date, now.date().strftime("%Y-%m-%d"))
+    except Exception as exc:
+        granola_updates.append({"status": "error", "reason": str(exc), "since_date": since_date})
+        save_json(GRANOLA_UPDATES_PATH, granola_updates)
+        return granola_updates, False
+
+    for meeting in meetings:
+        event = granola_event_from_meeting(meeting)
+        source_ref = granola_activity_source_ref(meeting["date"], meeting["title"])
+        primary_anchor = granola_anchor_for_event(event, crm_index)
+        if not primary_anchor:
+            granola_updates.append(
+                {
+                    "title": meeting["title"],
+                    "date": meeting["date"],
+                    "status": "skipped_unanchored",
+                    "source_ref": source_ref,
+                }
+            )
+            continue
+
+        secondary_links = granola_secondary_links(primary_anchor, crm_index)
+        activity_result = write_granola_activity(event, primary_anchor, secondary_links, crm_index)
+        task_parent = granola_task_parent(primary_anchor, secondary_links, crm_index)
+        task_results = []
+        for action_item in meeting.get("action_items", []):
+            if not task_parent:
+                task_results.append({"task": action_item, "status": "skipped_no_task_parent"})
+                continue
+            task_result = write_granola_task(
+                meeting,
+                action_item,
+                task_parent,
+                secondary_links,
+                crm_index,
+                activity_link=activity_result.get("record", {}).get("link", ""),
+            )
+            if task_result.get("written"):
+                task_results.append({"task": action_item, "status": "task_created", "path": task_result["record"]["rel_path"]})
+            elif task_result.get("duplicate"):
+                task_results.append({"task": action_item, "status": "duplicate_task", "path": task_result["record"]["rel_path"]})
+            else:
+                task_results.append({"task": action_item, "status": task_result.get("reason", "skipped")})
+
+        granola_updates.append(
+            {
+                "title": meeting["title"],
+                "date": meeting["date"],
+                "status": "activity_created" if activity_result.get("written") else "duplicate_activity",
+                "source_ref": source_ref,
+                "primary_parent": primary_anchor["record"]["link"],
+                "activity_path": activity_result.get("record", {}).get("rel_path", ""),
+                "tasks": task_results,
+            }
+        )
+
+    save_json(GRANOLA_UPDATES_PATH, granola_updates)
+    state["granola_last_sync_at"] = now.isoformat().replace("+00:00", "Z")
+    return granola_updates, True
 
 
 def anchor_context_type(primary_anchor):
@@ -1567,6 +2532,7 @@ def main():
     parser.add_argument("--since")
     parser.add_argument("--autonomous", action="store_true")
     parser.add_argument("--auto-tier", type=int, default=0)
+    parser.add_argument("--skip-granola", action="store_true")
     args = parser.parse_args()
 
     ensure_dirs()
@@ -1597,6 +2563,7 @@ def main():
     opportunity_suggestions = []
     task_suggestions = []
     noise_review = []
+    drive_document_updates = []
     audit_log = {"scanned": 0, "ignored": 0, "actions": []}
 
     def record_interaction(email, event_date):
@@ -1666,16 +2633,16 @@ def main():
             completion_conf = task_analyzer.completion_confidence_for_task(event, task)
             if completion_conf < 0.65:
                 continue
-                task_suggestions.append(
-                    build_task_suggestion(
-                        event,
-                        primary_anchor["record"]["link"] if primary_anchor else "",
-                        "task_completion_suggestion",
-                        summarize_text(event.get("body_text") or event.get("snippet", ""), 200),
-                        matched_task=task,
-                        confidence=completion_conf,
-                    )
+            task_suggestions.append(
+                build_task_suggestion(
+                    event,
+                    primary_anchor["record"]["link"] if primary_anchor else "",
+                    "task_completion_suggestion",
+                    summarize_text(event.get("body_text") or event.get("snippet", ""), 200),
+                    matched_task=task,
+                    confidence=completion_conf,
                 )
+            )
 
         if primary_anchor:
             for item in task_analyzer.extract_action_items(combined_text):
@@ -1737,11 +2704,119 @@ def main():
                     lead_decisions.append(decision)
                     opportunity_suggestions.append(build_opportunity_suggestion(event, lead_record, "lead"))
 
-    for message in harvester.get_gmail_messages():
-        process_event(EventNormalizer.normalize_gmail(message))
+    gmail_events = [EventNormalizer.normalize_gmail(message) for message in harvester.get_gmail_messages()]
+    gmail_events.sort(key=lambda item: sort_timestamp(item.get("event_time", "")))
+    thread_history = {}
+    for event in gmail_events:
+        thread_id = str(event.get("thread_id") or "")
+        history = thread_history.setdefault(thread_id, []) if thread_id else []
+        event["_thread_context"] = build_thread_context(history) if history else {}
+        process_event(event)
+        if thread_id:
+            history.append(
+                {
+                    "subject_or_title": event.get("subject_or_title", ""),
+                    "body_text": event.get("body_text", ""),
+                    "snippet": event.get("snippet", ""),
+                    "direction": event.get("direction", ""),
+                    "attachment_names": list(event.get("attachment_names", []) or []),
+                }
+            )
 
     for calendar_event in harvester.get_calendar_events():
-        process_event(EventNormalizer.normalize_calendar(calendar_event))
+        event = EventNormalizer.normalize_calendar(calendar_event)
+        event["_thread_context"] = {}
+        process_event(event)
+
+    for file_item in harvester.get_labeled_drive_documents(resolve_crm_drive_label_ids()):
+        file_id = str(file_item.get("id") or "").strip()
+        modified_time = str(file_item.get("modifiedTime") or "").strip()
+        if not file_id or not modified_time:
+            continue
+
+        if already_ingested_drive_doc(crm_index, file_id, str(file_item.get("webViewLink") or ""), modified_time):
+            drive_document_updates.append(
+                {
+                    "file_id": file_id,
+                    "title": str(file_item.get("name") or ""),
+                    "modified_time": modified_time,
+                    "status": "skipped_existing",
+                }
+            )
+            continue
+
+        try:
+            doc_text = meeting_notes_resolver._docs_get_text(file_id)
+        except RuntimeError:
+            doc_text = ""
+
+        event = EventNormalizer.normalize_drive_file(file_item, doc_text)
+        event["_thread_context"] = {}
+        primary_anchor = infer_anchor_from_text(event["subject_or_title"], event["body_text"], crm_index)
+        if not primary_anchor:
+            drive_document_updates.append(
+                {
+                    "file_id": file_id,
+                    "title": event["subject_or_title"],
+                    "modified_time": modified_time,
+                    "status": "unresolved_anchor",
+                }
+            )
+            continue
+
+        resolutions = [
+            {
+                "status": "matched",
+                "match_type": primary_anchor["type"],
+                "participant": {"email": "", "name": ""},
+                "record": primary_anchor["record"],
+                "opportunities": [primary_anchor["record"]] if primary_anchor["type"] == "opportunity" else [],
+            }
+        ]
+        secondary_links = build_secondary_links(primary_anchor, resolutions)
+        event["_notes_context"] = {"links": [event["source_link"]] if event.get("source_link") else [], "summary": "", "text": event["body_text"], "looked_up": False}
+        combined_text = NotesAnalyzer.combined_event_text(event)
+        signals = inferrer.infer_signals(combined_text, event.get("subject_or_title", ""), "drive")
+        action_items = task_analyzer.extract_action_items(combined_text)
+
+        matched_tasks = task_analyzer.find_matching_tasks(set(link_variants(primary_anchor["record"]["link"])))
+        for task in matched_tasks:
+            completion_conf = task_analyzer.completion_confidence_for_task(event, task)
+            if completion_conf < 0.65:
+                continue
+            task_suggestions.append(
+                build_task_suggestion(
+                    event,
+                    primary_anchor["record"]["link"],
+                    "task_completion_suggestion",
+                    summarize_text(event.get("body_text") or event.get("snippet", ""), 200),
+                    matched_task=task,
+                    confidence=completion_conf,
+                )
+            )
+
+        for item in action_items:
+            task_type = "committed_action" if task_analyzer.looks_owner_assigned(item) else "suggested_follow_up"
+            task_suggestions.append(build_task_suggestion(event, primary_anchor["record"]["link"], task_type, item))
+
+        doc_kind = classify_drive_document(event, signals, action_items)
+        if doc_kind == "activity":
+            write_result = maybe_write_activity(event, primary_anchor, secondary_links, crm_index, resolutions)
+            status = "duplicate_activity" if write_result.get("duplicate") else "activity_written"
+        else:
+            write_result = maybe_write_note(event, primary_anchor, secondary_links, crm_index)
+            status = "duplicate_note" if write_result.get("duplicate") else "note_written"
+
+        drive_document_updates.append(
+            {
+                "file_id": file_id,
+                "title": event["subject_or_title"],
+                "modified_time": modified_time,
+                "status": status,
+                "primary_parent": primary_anchor["record"]["link"],
+                "task_suggestions_added": len(action_items),
+            }
+        )
 
     activity_updates = sort_activity_updates(activity_updates)
     contact_discoveries = sort_contact_discoveries(contact_discoveries)
@@ -1755,11 +2830,16 @@ def main():
     save_json(OPPORTUNITY_SUGGESTIONS_PATH, opportunity_suggestions)
     save_json(TASK_SUGGESTIONS_PATH, task_suggestions)
     save_json(NOISE_REVIEW_PATH, noise_review)
+    save_json(DRIVE_DOCUMENT_UPDATES_PATH, drive_document_updates)
     save_json(INGESTION_AUDIT_PATH, audit_log)
     save_json(INTERACTIONS_PATH, interactions)
 
     save_json(LEGACY_WORKSPACE_UPDATES_PATH, legacy_workspace_updates(activity_updates, task_suggestions, lead_decisions, opportunity_suggestions))
     save_json(LEGACY_DISCOVERY_PATH, legacy_discovery(contact_discoveries, lead_decisions, noise_review))
+
+    granola_updates, granola_ran = process_granola_post_ingest(args, crm_index, state)
+    if not granola_ran and not os.path.exists(GRANOLA_UPDATES_PATH):
+        save_json(GRANOLA_UPDATES_PATH, [])
 
     state["gmail_last_sync_at"] = now.isoformat().replace("+00:00", "Z")
     state["calendar_last_sync_at"] = now.isoformat().replace("+00:00", "Z")
@@ -1775,6 +2855,7 @@ def main():
                 "opportunity_suggestions": len(opportunity_suggestions),
                 "task_suggestions": len(task_suggestions),
                 "noise_review": len(noise_review),
+                "granola_updates": len(granola_updates),
                 "status": "staged",
             },
             indent=2,

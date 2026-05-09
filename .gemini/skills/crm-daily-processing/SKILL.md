@@ -10,6 +10,7 @@ Use this skill when the user wants to:
 - start the day in the CRM
 - run the normal daily operating loop
 - reconcile new Gmail / Calendar activity with live opportunities and tasks
+- optionally reconcile Granola meeting notes when Granola MCP is available
 - review overdue or waiting work
 - capture updates that happened outside Google Workspace or outside the CRM
 
@@ -32,22 +33,34 @@ Do not use this skill for one-off record creation when a narrower skill is clear
      * `lead_decisions.json`
      * `opportunity_suggestions.json`
      * `task_suggestions.json`
+     * `drive_document_updates.json` when CRM-labeled Google Docs were considered by the ingester
    * Treat ingest as proposal generation, not automatic truth.
 
-3. **Process Staged Signals**
+3. **Optionally Pull Granola Context**
+   * If Granola MCP is connected in the current AI client, query Granola for recent meetings that may not be visible through the current Gmail / Calendar / Google Drive path.
+   * Focus on:
+     * recent meetings with known CRM contacts, accounts, organizations, or opportunities
+     * action items or next steps not already reflected in `task_suggestions.json`
+     * strategic notes or decisions that would materially improve relationship memory
+   * Treat Granola as an optional enrichment layer, not a required dependency.
+   * If Granola MCP is not connected or returns no useful results, continue the workflow without blocking.
+
+4. **Process Staged Signals**
    * Apply clear, low-ambiguity updates directly.
    * For judgment-heavy items, summarize the proposed change and confirm it with the user before mutating key records.
    * Prefer enriching existing `Activities`, `Tasks`, `Leads`, and `Opportunities` over creating duplicates.
+   * If Granola surfaced useful meeting content, convert it into durable CRM changes as `Activities`, `Notes`, or `Task` updates with clear provenance.
 
-4. **Ask For Off-System Updates**
+5. **Ask For Off-System Updates**
    * Ask the user concise questions about important changes not visible in Gmail / Calendar.
    * Typical prompts:
      * what happened on WhatsApp / Signal / in person?
      * what tasks are actually done, blocked, or waiting?
      * what opportunities changed stage, momentum, or commercial reality?
+   * When Granola is available, treat it as a partial substitute for manual recall of meeting details, but still ask for anything that happened outside captured systems.
    * Convert user-provided updates into durable CRM changes, usually as `Activities`, task updates, lead-stage changes, or opportunity-stage updates.
 
-5. **Review Task Queue**
+6. **Review Task Queue**
    * Review overdue `todo` tasks first.
    * Review `waiting` tasks as reminder-driven review points, not execution failures.
    * Normalize task states:
@@ -56,22 +69,22 @@ Do not use this skill for one-off record creation when a narrower skill is clear
      * `completed` when the task was done or clearly superseded
    * When moving a task to `waiting`, reset `due-date` to the next review date.
 
-6. **Review Opportunity And Lead Status**
+7. **Review Opportunity And Lead Status**
    * Check whether any live opportunities should change stage, probability, or next-step framing.
    * Check whether active leads should stay leads, advance in lead status, or convert.
    * Use `crm-lead-manager` and `crm-opportunity-manager` when lifecycle updates are substantive.
 
-7. **Execute Immediate Follow-Through**
+8. **Execute Immediate Follow-Through**
    * Draft or send the obvious follow-up emails the user asks for.
    * Log meaningful outbound and inbound interactions as `Activities`.
    * Create or update `Tasks` so the next move is explicit.
 
-8. **Refresh Derived Views**
+9. **Refresh Derived Views**
    * Run `update-dashboard`.
    * Rebuild `index.md` if needed.
    * Ensure `log.md` reflects meaningful mutations performed during the session.
 
-9. **Close With A Daily Summary**
+10. **Close With A Daily Summary**
    * Give the user a concise report:
      * what was ingested
      * what was updated
@@ -96,6 +109,7 @@ Do not use this skill for one-off record creation when a narrower skill is clear
 
 A good run of this skill should leave the vault with:
 - current Gmail / Calendar ingest state
+- optional Granola meeting context reviewed when available
 - staged proposals reviewed or explicitly deferred
 - user-provided off-system updates captured
 - task states reconciled
@@ -116,3 +130,13 @@ Use these as sub-workflows when needed:
 - `crm-create-lead`
 - `crm-create-opportunity`
 - `crm-create-daily-report`
+
+## Granola Guidance
+
+- Granola MCP is an optional interactive tool source, not part of the repo's guaranteed baseline.
+- If connected, use it after the main Workspace ingest so the existing Gmail / Calendar / Drive logic runs first.
+- Prefer Granola for:
+  * meeting action items that were not explicit in email
+  * meeting summaries or decisions that improve CRM memory quality
+  * validating whether a meeting-derived task or activity should exist
+- Do not assume every meeting exists in Granola, and do not block the daily loop on Granola availability.

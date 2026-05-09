@@ -23,7 +23,7 @@ This skill must stay aligned with the lead lifecycle defined in [`crm-lead-manag
 The current script exists and is usable:
 
 ```bash
-python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py [--since YYYY-MM-DD] [--auto-tier N]
+python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py [--since YYYY-MM-DD] [--auto-tier N] [--skip-granola]
 ```
 
 But the current implementation is not yet fully aligned with:
@@ -47,6 +47,7 @@ Use this skill when you need to:
 - review unknown participants and decide whether they are contacts, leads, or noise
 - propose lead stage changes from interaction evidence
 - mine relationship-relevant meeting notes for richer CRM updates
+- optionally enrich the review with Granola meeting notes when Granola MCP is available
 
 ## Operating Model
 
@@ -64,6 +65,10 @@ Core pipeline:
 - **Resolver**: matches events against CRM entities and company context
 - **Inferrer**: derives relationship, lead, opportunity, and task signals
 - **Stager**: writes review queues and audit outputs
+
+Current extension:
+- an end-of-run Drive pass may also review CRM-labeled Google Docs after the main Gmail / Calendar flow
+- an end-of-run Granola pass may also review recent Granola meetings and write deduped Activities / Tasks when Granola MCP is available through local Codex
 
 ### 2. Use contextual inference, not flat discovery
 
@@ -116,7 +121,7 @@ And for conversion suggestions it should always include:
 - `conversion_mode = relationship-only`
 - or `conversion_mode = undetermined`
 
-### 5. Always look for meeting notes in Google Drive
+### 5. Always look for meeting notes in Google Drive first
 
 When the ingester processes a calendar entry or relationship-relevant email, it should always run a meeting-notes lookup step before finalizing activity, task, lead, or opportunity suggestions.
 
@@ -142,6 +147,23 @@ If the Drive search finds a likely Google Doc, the ingester should read the docu
 - action-item extraction
 - activity write quality
 - review queue summaries
+
+The current implementation may also run a labeled-document Drive pass after the main event processing. That pass is additive, not a replacement for the earlier broad lookup behavior.
+
+### 5a. Optionally enrich with Granola after the main ingest
+
+If Granola MCP is connected in local Codex, the ingester may run a post-ingest Granola pass automatically after the normal Gmail / Calendar / Drive ingest has completed. Use `--skip-granola` to disable that pass for a given run.
+
+Use Granola to:
+- search for recent meeting notes that were not picked up through the standard event-driven path
+- pull action items, decisions, or summaries from recent meetings
+- validate or enrich `task_suggestions.json`, `activity_updates.json`, and note creation decisions
+
+Rules:
+- Granola is optional and interactive; do not make this skill depend on it for baseline success
+- the main Gmail / Calendar / Drive logic remains the first-pass source of truth
+- if Granola finds useful additional context, convert that into durable CRM updates with explicit provenance and dedupe by Granola `source-ref`
+- if Granola is unavailable, disconnected, or returns no relevant meetings, continue without blocking
 
 ### 6. Treat tasks conservatively
 
@@ -169,6 +191,8 @@ The target queue structure is:
 
 Optional:
 - `staging/noise_review.json` for borderline filtered items
+- `staging/drive_document_updates.json` for the post-ingest CRM-labeled Google Docs pass
+- `staging/granola_updates.json` for the post-ingest Granola pass
 
 Review in this order:
 1. `activity_updates.json`
@@ -176,6 +200,8 @@ Review in this order:
 3. `lead_decisions.json`
 4. `opportunity_suggestions.json`
 5. `task_suggestions.json`
+6. `drive_document_updates.json` when present
+7. `granola_updates.json` when present
 
 Why:
 - first confirm what happened
@@ -183,6 +209,8 @@ Why:
 - then what relationship state applies
 - then whether an opportunity should exist
 - then what follow-up work should be tracked
+- then inspect any additional labeled-document imports or skips
+- then inspect any Granola-created or Granola-skipped records
 
 ## Queue Semantics
 
@@ -247,6 +275,8 @@ Activity dedupe should validate:
 - normalized primary parent
 
 The script should scan `Activities/` recursively before writing.
+
+When Granola-derived updates are converted into CRM records manually through this skill, they should also preserve durable provenance in `source` / `source-ref` so future ingest and review logic can avoid duplicate memory.
 
 ## References
 

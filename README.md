@@ -11,6 +11,7 @@ The source of truth is not this repo. The source of truth is the private vault a
 This repo gives an agent or developer the machinery to:
 - create and maintain CRM records in markdown
 - sync Gmail and Google Calendar into relationship memory
+- enrich that ingest with meeting-note discovery from Google Drive and optional post-ingest Granola review
 - mirror CRM tasks into Google Tasks with durable task IDs
 - generate a relationship-first dashboard
 - track leads before conversion
@@ -36,6 +37,7 @@ Then adopt these current assumptions:
 - `Deal-Flow/` is still the live deal inventory directory
 - `waiting` is a first-class task state and its `due-date` should usually mean the next review/check-back date
 - a company may exist both as a `Deal` and as an `Opportunity`, but those records mean different things
+- Workspace ingest now means: Gmail / Calendar first, then additive Drive and optional Granola post-passes
 
 Use this distinction:
 - `Deal`: a company / startup in inventory that can be matched to investors
@@ -95,6 +97,7 @@ Important current rules:
 - Python 3
 - Gemini CLI or another compatible coding agent runner
 - `gws` CLI authenticated to the relevant Google Workspace account
+- local `codex` CLI if you want the optional Granola post-ingest pass to run automatically
 
 ### Configure the vault path
 
@@ -116,6 +119,12 @@ Sync Workspace:
 
 ```bash
 CRM_DATA_PATH=./crm-data python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py
+```
+
+Sync Workspace but skip the Granola post-pass:
+
+```bash
+CRM_DATA_PATH=./crm-data python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py --skip-granola
 ```
 
 Refresh dashboard and derived views:
@@ -204,9 +213,10 @@ At a lower level, the manual sequence is:
 2. Review `crm-data/staging/activity_updates.json`.
 3. Review `crm-data/staging/contact_discoveries.json` and `crm-data/staging/lead_decisions.json`.
 4. Review `crm-data/staging/opportunity_suggestions.json` and `crm-data/staging/task_suggestions.json`.
-5. Process or create `Inbox/` items into durable records.
-6. Create or update `Leads`, `Activities`, `Notes`, and `Tasks` as needed.
-7. Run the dashboard refresh.
+5. Review `crm-data/staging/drive_document_updates.json` and `crm-data/staging/granola_updates.json` when present.
+6. Process or create `Inbox/` items into durable records.
+7. Create or update `Leads`, `Activities`, `Notes`, and `Tasks` as needed.
+8. Run the dashboard refresh.
 
 If you only do one thing to get oriented in a live vault, read:
 - `crm-data/DASHBOARD.md`
@@ -224,6 +234,43 @@ That means:
 - repeated sync runs resume from the last successful Gmail/Calendar checkpoint by default
 - `source-ref` is still used as a second dedupe layer
 - passing `--since YYYY-MM-DD` overrides the saved checkpoint for backfills
+
+Current ingest behavior is broader than just Gmail / Calendar:
+- Gmail messages are processed with thread-aware task detection and can use prior thread context plus attachment metadata
+- calendar and email events still do broad meeting-note lookup first
+- a later additive Drive pass can ingest CRM-labeled Google Docs that were updated since the sync window
+- a later optional Granola pass can create deduped Activities and Tasks from recent meetings if local Codex + Granola MCP are configured
+
+Current staging / audit files you should expect from ingest:
+- `crm-data/staging/activity_updates.json`
+- `crm-data/staging/contact_discoveries.json`
+- `crm-data/staging/lead_decisions.json`
+- `crm-data/staging/opportunity_suggestions.json`
+- `crm-data/staging/task_suggestions.json`
+- `crm-data/staging/drive_document_updates.json`
+- `crm-data/staging/granola_updates.json`
+- `crm-data/staging/ingestion_audit.json`
+- `crm-data/staging/workspace_sync_state.json`
+
+Useful ingest settings in `crm-data/settings.json`:
+- `crm_drive_label_ids`
+- `granola_post_ingest_enabled`
+- `granola_post_ingest_lookback_days`
+
+## Optional Granola Setup
+
+Granola is not required for baseline CRM operation. If you want the automatic post-ingest Granola pass, configure Granola MCP in local Codex first:
+
+```bash
+codex mcp add granola --url https://mcp.granola.ai/mcp
+codex mcp login granola
+codex mcp list
+```
+
+Practical notes:
+- the current implementation calls Granola through local `codex exec`
+- if Codex or Granola MCP is unavailable, ingest should still complete normally
+- Granola-derived records preserve durable provenance in `source` / `source-ref` so future runs can dedupe correctly
 
 ## Naming Conventions
 

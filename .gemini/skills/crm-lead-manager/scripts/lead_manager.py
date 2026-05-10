@@ -23,13 +23,14 @@ from frontmatter_utils import (
 from navigation_manager import append_log_entry, rebuild_index, record_mutation
 
 
-VALID_STATUSES = {"new", "prospect", "engaged", "qualified", "converted", "disqualified"}
+VALID_STATUSES = {"new", "prospect", "engaged", "qualified", "deferred", "converted", "disqualified"}
 TRANSITIONS = {
-    "new": {"prospect", "engaged", "disqualified"},
-    "prospect": {"engaged", "qualified", "disqualified"},
-    "engaged": {"prospect", "qualified", "disqualified"},
-    "qualified": {"engaged", "disqualified"},
-    "disqualified": {"prospect", "engaged"},
+    "new": {"prospect", "engaged", "deferred", "disqualified"},
+    "prospect": {"engaged", "qualified", "deferred", "disqualified"},
+    "engaged": {"prospect", "qualified", "deferred", "disqualified"},
+    "qualified": {"engaged", "deferred", "disqualified"},
+    "deferred": {"prospect", "engaged", "qualified", "disqualified"},
+    "disqualified": {"prospect", "engaged", "deferred"},
 }
 SOURCE_CHOICES = {"manual", "gmail", "calendar", "inbox", "referral", "linkedin"}
 PRIORITY_CHOICES = {"high", "medium", "low"}
@@ -205,7 +206,7 @@ def cmd_create(args):
         {
             "lead-id": lead_id,
             "Lead Name": args.name,
-            "Lead Status": args.status,
+            "new | prospect | engaged | qualified | deferred | converted | disqualified": args.status,
             "Owner": args.owner,
             "manual | gmail | calendar | inbox | referral | linkedin": args.lead_source,
             "Person Name": args.person_name or "",

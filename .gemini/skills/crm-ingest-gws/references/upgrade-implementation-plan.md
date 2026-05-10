@@ -400,6 +400,6 @@ The upgrade is sufficient when:
 - new participants in existing lead threads default to contact expansion, not new standalone leads
 - lead-stage suggestions appear explicitly in review queues
 - opportunity suggestions are first-class outputs
-- example-company/Example Company-style tasks and activities resolve to the right parent relationships
+- example-company-style tasks and activities resolve to the right parent relationships
 - Tier 1 activity auto-write produces no duplicates across repeated runs
 - the ingester operates correctly against nested time-bucketed directories

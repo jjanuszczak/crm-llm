@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CRM Dashboard Error</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+  </head>
+  <body>
+    <main class="error-page">
+      <p class="eyebrow">Configuration</p>
+      <h1>CRM data path is unavailable</h1>
+      <p>{{ message }}</p>
+    </main>
+  </body>
+</html>

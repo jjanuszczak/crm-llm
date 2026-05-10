@@ -12,6 +12,7 @@ Current implementation support covers:
 - structural updates to parent context and core metadata
 - stakeholder and influencer assignment
 - stage and probability updates
+- paused opportunity handling for "come back later" workflows
 - won/lost close handling
 - stale archive handling
 - spawning follow-up `Tasks`, `Activities`, and `Notes`
@@ -20,6 +21,7 @@ Current implementation support covers:
 ## When To Use
 - A commercial relationship already exists and an opportunity should be created or refined.
 - The user wants to update stage, probability, value, or close timing.
+- The user wants to pause an opportunity without marking it lost.
 - The user wants to assign a primary contact or influencer set.
 - The user wants to create follow-up operational records from opportunity context.
 - The user wants to mark an opportunity won, lost, or stale.
@@ -64,6 +66,7 @@ Current implementation support covers:
 The user can ask for:
 - "Create an opportunity for Example Company."
 - "Advance this opportunity to proposal at 40%."
+- "Pause this opportunity until next quarter."
 - "Add two influencers."
 - "Mark this opportunity lost and capture the reason."
 - "Create the follow-up task and the meeting activity."

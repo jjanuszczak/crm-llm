@@ -1,0 +1,67 @@
+<main id="pipeline-board" class="pipeline-board">
+  {% for stage in stages %}
+    {% if stage == "Discovery Opportunity" %}
+      <section class="conversion-boundary" aria-label="Lead conversion boundary">
+        <span>Convert</span>
+        <strong>Lead becomes CRM operating records</strong>
+      </section>
+    {% endif %}
+    <section class="stage-column" aria-label="{{ stage }} stage">
+      <header class="stage-header">
+        <div>
+          <h2>{{ stage }}</h2>
+          <p>{{ pipeline.stage_counts.get(stage, 0) }} records</p>
+        </div>
+      </header>
+      <div class="card-stack">
+        {% for item in pipeline.columns.get(stage, []) %}
+          <article
+            class="pipeline-card {{ item.record_type }} {% if item.overdue_count %}is-overdue{% elif item.needs_attention %}needs-attention{% endif %}"
+            hx-get="/records/{{ item.key }}"
+            hx-target="#detail-drawer"
+            hx-swap="outerHTML"
+            tabindex="0"
+          >
+            <div class="card-topline">
+              <span class="type-badge">{{ item.record_type }}</span>
+              <span class="native-stage">{{ item.native_stage }}</span>
+            </div>
+            <h3>{{ item.title }}</h3>
+            <div class="card-meta">
+              {% if item.organization_or_account %}
+                <span>{{ item.organization_or_account }}</span>
+              {% endif %}
+              {% if item.person_or_contact %}
+                <span>{{ item.person_or_contact }}</span>
+              {% endif %}
+            </div>
+            <div class="signal-row">
+              {% if item.priority_or_probability %}
+                <span class="signal">{{ item.priority_or_probability }}</span>
+              {% endif %}
+              {% if item.next_motion %}
+                <span class="signal">{{ item.next_motion }}</span>
+              {% endif %}
+              {% if item.latest_activity_date %}
+                <span class="signal">Last {{ item.latest_activity_date }}</span>
+              {% else %}
+                <span class="signal muted">No recent activity</span>
+              {% endif %}
+            </div>
+            <div class="task-row">
+              {% if item.overdue_count %}
+                <strong>{{ item.overdue_count }} overdue</strong>
+              {% elif item.task_count %}
+                <span>{{ item.task_count }} open task{% if item.task_count != 1 %}s{% endif %}</span>
+              {% else %}
+                <span class="muted">No open tasks</span>
+              {% endif %}
+            </div>
+          </article>
+        {% else %}
+          <div class="empty-column">No records</div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+</main>

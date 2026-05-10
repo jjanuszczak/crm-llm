@@ -218,14 +218,7 @@ def resolve_own_emails():
         if normalized:
             own_emails.add(normalized)
 
-    if own_emails:
-        return own_emails
-
-    return {
-        "operator@example.com",
-        "operator-alt@example.com",
-        "operator-work@example.com",
-    }
+    return own_emails
 
 
 OWN_EMAILS = resolve_own_emails()

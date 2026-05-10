@@ -5,9 +5,12 @@ Manages lead lifecycle decisions in the CRM using a relationship-first model. Us
 
 This skill reflects the current intended lifecycle:
 - `new`: identified entity, not yet meaningfully engaged
+- `prospect`: identified and plausible, but not yet meaningfully engaged
 - `engaged`: a known contact exists and there has been real interaction
 - `qualified`: contact and organization are known, and there is intent to explore work together
+- `deferred`: still viable, but intentionally parked for future review
 - `converted`: the lead has been resolved into durable CRM records
+- `disqualified`: no longer viable based on current evidence
 
 This skill also distinguishes multiple conversion outcomes:
 - commercial opportunity path: `Organization + Contact + Account + Opportunity`
@@ -19,7 +22,7 @@ Current implementation support now covers both lead status management and two co
 
 ## When To Use
 - A new person or company has been identified and should be tracked before full CRM conversion.
-- The user wants to decide whether a lead should be `new`, `engaged`, or `qualified`.
+- The user wants to decide whether a lead should be `new`, `prospect`, `engaged`, `qualified`, or `deferred`.
 - The user wants to validate whether a lead is ready for qualification.
 - The user wants to revive a disqualified lead.
 - The user wants to convert a lead and needs the correct conversion path.
@@ -35,8 +38,10 @@ Current implementation support now covers both lead status management and two co
 
 2. **Choose the right lead stage**
    - `new`: there is an identified person or organization, but no meaningful engagement yet.
+   - `prospect`: there is enough signal to keep the lead visible, but not enough engagement to work it actively.
    - `engaged`: there is a real contact and at least one concrete interaction such as an email, call, or meeting.
    - `qualified`: contact and organization are both known, and there is a credible path to work together.
+   - `deferred`: the lead is not dead, but should be reviewed later through a `waiting` task with a future `due-date`.
    - `converted`: only after durable records have been created and linked.
 
 3. **Use the current script where it fits**

@@ -31,6 +31,11 @@ python3 .gemini/skills/crm-lead-manager/scripts/lead_manager.py validate-qualifi
 python3 .gemini/skills/crm-lead-manager/scripts/lead_manager.py set-status "Jane-Doe-Example-Capital" --status qualified
 ```
 
+### Defer until a later review
+```bash
+python3 .gemini/skills/crm-lead-manager/scripts/lead_manager.py set-status "Jane-Doe-Example-Capital" --status deferred
+```
+
 ### Revive a disqualified lead
 ```bash
 python3 .gemini/skills/crm-lead-manager/scripts/lead_manager.py revive "Jane-Doe-Example-Capital" --meaningful-two-way

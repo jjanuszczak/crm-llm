@@ -6,6 +6,8 @@ This document is the canonical current-state schema reference for the vault and 
 
 Some current templates still include calculated or compatibility fields for operational continuity. In this document, the field status is normative: `Calculated` and `Deprecated` fields should be treated as non-canonical even if they still appear in templates today.
 
+For the end-to-end lead-to-opportunity lifecycle model, see `docs/crm-journey-spec.md`.
+
 ## Field Status
 
 - `Canonical`: part of the intended durable schema and should be used for new writes.
@@ -147,7 +149,7 @@ Pre-conversion relationship candidates.
 | :--- | :--- | :--- |
 | `id` | Canonical | Stable machine id |
 | `lead-name` | Canonical | Display name |
-| `status` | Canonical | `new`, `prospect`, `engaged`, `qualified`, `converted`, `disqualified` |
+| `status` | Canonical | `new`, `prospect`, `engaged`, `qualified`, `deferred`, `converted`, `disqualified` |
 | `owner` | Canonical | Record owner |
 | `lead-source` | Canonical | Primary source |
 | `person-name` | Canonical | Optional early-stage |
@@ -181,7 +183,7 @@ Concrete commercial or strategic engagements.
 | `organization` | Canonical | `[[Organizations/...]]` |
 | `opportunity-type` | Canonical | `advisory`, `consulting`, `financing`, `hiring`, `partnership`, `other` |
 | `is-active` | Canonical | Boolean |
-| `stage` | Canonical | Current canonical stage field |
+| `stage` | Canonical | `discovery`, `qualified`, `proposal`, `negotiation`, `paused`, `closed-won`, `closed-lost` |
 | `commercial-value` | Canonical | Canonical value field |
 | `close-date` | Canonical | Target or realized close date |
 | `probability` | Canonical | Integer percentage |

@@ -25,7 +25,28 @@ from frontmatter_utils import iter_markdown_files, load_frontmatter_file
 from navigation_manager import display_name_from_link, first_sentence, normalize_link
 
 
-PIPELINE_STAGES = ["New", "Engaged", "Qualified", "Proposal", "Won", "Lost"]
+PIPELINE_STAGES = [
+    "New Lead",
+    "Prospect",
+    "Engaged Lead",
+    "Qualified Lead",
+    "Discovery Opportunity",
+    "Qualified Opportunity",
+    "Proposal",
+    "Negotiation",
+    "Deferred / Paused",
+    "Closed Won",
+    "Closed Lost",
+]
+PIPELINE_STAGE_GROUPS = {
+    "lead-intake": {"New Lead", "Prospect", "Engaged Lead"},
+    "conversion-ready": {"Qualified Lead"},
+    "opportunity-execution": {"Discovery Opportunity", "Qualified Opportunity", "Proposal", "Negotiation"},
+    "deferred-paused": {"Deferred / Paused"},
+    "closed": {"Closed Won", "Closed Lost"},
+}
+CLOSED_PIPELINE_STAGES = {"Closed Won", "Closed Lost"}
+PIPELINE_STAGE_ORDER = {stage: index for index, stage in enumerate(PIPELINE_STAGES)}
 OPEN_TASK_STATUSES = {"todo", "waiting", "in-progress", "in_progress", "open"}
 
 
@@ -60,6 +81,7 @@ class PipelineItem:
     priority_or_probability: str = ""
     priority_rank: int = 0
     latest_activity_date: str = ""
+    next_motion: str = ""
     open_tasks: list[CrmRecord] = field(default_factory=list)
     overdue_tasks: list[CrmRecord] = field(default_factory=list)
     is_active: bool = True
@@ -110,6 +132,7 @@ def load_pipeline(
     stage: str = "all",
     active_only: bool = True,
     attention_only: bool = False,
+    lifecycle_group: str = "all",
 ) -> PipelineData:
     crm_data_path = resolve_crm_data_path()
     if not crm_data_path.exists():
@@ -131,8 +154,11 @@ def load_pipeline(
         items = [item for item in items if item.record_type == record_type]
     if stage in PIPELINE_STAGES:
         items = [item for item in items if item.normalized_stage == stage]
+    if lifecycle_group in PIPELINE_STAGE_GROUPS:
+        group_stages = PIPELINE_STAGE_GROUPS[lifecycle_group]
+        items = [item for item in items if item.normalized_stage in group_stages]
     if active_only:
-        items = [item for item in items if item.is_active and item.normalized_stage not in {"Won", "Lost"}]
+        items = [item for item in items if item.is_active and item.normalized_stage not in CLOSED_PIPELINE_STAGES]
     if attention_only:
         items = [item for item in items if item.needs_attention]
 
@@ -234,6 +260,7 @@ def build_lead_item(record: CrmRecord, crm_data_path: Path, tasks: list[CrmRecor
         priority_or_probability=text(record.frontmatter.get("priority") or "medium"),
         priority_rank=priority_rank(record.frontmatter.get("priority")),
         latest_activity_date=latest_activity(record, activities),
+        next_motion=next_lead_motion(native_stage),
         open_tasks=open_tasks(record_tasks),
         overdue_tasks=overdue,
         is_active=native_stage not in {"converted", "disqualified", "archived"},
@@ -258,6 +285,7 @@ def build_opportunity_item(record: CrmRecord, crm_data_path: Path, tasks: list[C
         priority_or_probability=f"{probability}%" if probability not in (None, "") else "",
         priority_rank=probability_rank(probability),
         latest_activity_date=latest_activity(record, activities),
+        next_motion=next_opportunity_motion(native_stage),
         open_tasks=open_tasks(record_tasks),
         overdue_tasks=overdue,
         is_active=bool(record.frontmatter.get("is-active", True)) and native_stage not in {"closed-won", "closed-lost", "won", "lost"},
@@ -267,31 +295,59 @@ def build_opportunity_item(record: CrmRecord, crm_data_path: Path, tasks: list[C
 
 def normalize_lead_stage(stage: str) -> str:
     mapping = {
-        "new": "New",
-        "prospect": "Engaged",
-        "engaged": "Engaged",
-        "qualified": "Qualified",
-        "converted": "Won",
-        "disqualified": "Lost",
+        "new": "New Lead",
+        "prospect": "Prospect",
+        "engaged": "Engaged Lead",
+        "qualified": "Qualified Lead",
+        "deferred": "Deferred / Paused",
+        "converted": "Closed Won",
+        "disqualified": "Closed Lost",
     }
-    return mapping.get(stage, "New")
+    return mapping.get(stage, "New Lead")
 
 
 def normalize_opportunity_stage(stage: str) -> str:
     mapping = {
-        "new": "New",
-        "prospect": "Engaged",
-        "discovery": "Engaged",
-        "qualification": "Qualified",
-        "qualified": "Qualified",
+        "new": "Discovery Opportunity",
+        "prospect": "Discovery Opportunity",
+        "discovery": "Discovery Opportunity",
+        "qualification": "Qualified Opportunity",
+        "qualified": "Qualified Opportunity",
         "proposal": "Proposal",
-        "negotiation": "Proposal",
-        "closed-won": "Won",
-        "won": "Won",
-        "closed-lost": "Lost",
-        "lost": "Lost",
+        "negotiation": "Negotiation",
+        "paused": "Deferred / Paused",
+        "closed-won": "Closed Won",
+        "won": "Closed Won",
+        "closed-lost": "Closed Lost",
+        "lost": "Closed Lost",
     }
-    return mapping.get(stage, "Engaged")
+    return mapping.get(stage, "Discovery Opportunity")
+
+
+def next_lead_motion(stage: str) -> str:
+    mapping = {
+        "new": "Add signal or move to prospect",
+        "prospect": "Engage or defer",
+        "engaged": "Qualify, defer, or disqualify",
+        "qualified": "Convert to durable CRM records",
+        "deferred": "Review waiting task",
+        "converted": "Inspect converted records",
+        "disqualified": "No action unless revived",
+    }
+    return mapping.get(stage, "Clarify lead status")
+
+
+def next_opportunity_motion(stage: str) -> str:
+    mapping = {
+        "discovery": "Validate opportunity",
+        "qualified": "Shape proposal",
+        "proposal": "Advance to negotiation",
+        "negotiation": "Close won, close lost, or pause",
+        "paused": "Review waiting task",
+        "closed-won": "Review outcome",
+        "closed-lost": "Review loss reason",
+    }
+    return mapping.get(stage, "Clarify opportunity stage")
 
 
 def related_tasks(record: CrmRecord, tasks: list[CrmRecord]) -> list[CrmRecord]:
@@ -439,7 +495,7 @@ def probability_rank(value: Any) -> int:
 
 
 def sort_key(item: PipelineItem) -> tuple[int, int, str, str]:
-    return (-item.overdue_count, -item.priority_rank, item.normalized_stage, item.title.lower())
+    return (-item.overdue_count, -item.priority_rank, f"{PIPELINE_STAGE_ORDER.get(item.normalized_stage, 999):03d}", item.title.lower())
 
 
 def encode_key(relative_path: str) -> str:

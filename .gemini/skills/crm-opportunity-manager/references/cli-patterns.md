@@ -21,6 +21,15 @@ python3 scripts/opportunity_manager.py set-stage \
   --probability 40
 ```
 
+Pause for later review:
+
+```bash
+python3 scripts/opportunity_manager.py set-stage \
+  "Opportunities/Example-Company-Strategic-Advisory-2026" \
+  --stage paused \
+  --probability 20
+```
+
 Update structure:
 
 ```bash

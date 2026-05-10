@@ -10,6 +10,10 @@ flowchart TD
     D -->|No| E["Stay in new"]
     D -->|Yes| F["Move to engaged"]
 
+    E --> R{"Still viable,<br/>but review later?"}
+    R -->|Yes| S["Move to deferred<br/>create waiting task with review date"]
+    R -->|No| D
+
     F --> G{"Known contact AND known organization<br/>AND intent to pursue relationship?"}
     G -->|No| H["Keep enriching lead<br/>add activity, notes, tasks"]
     G -->|Yes| I["Move to qualified"]
@@ -30,11 +34,13 @@ flowchart TD
 
     H --> D
     M --> J
+    S --> D
 ```
 
 ## Notes
 
 - `new` means identified but not yet meaningfully engaged.
+- `deferred` means still viable but parked for later review; use a `waiting` task with a future `due-date`.
 - `engaged` requires a real interaction with a known contact.
 - `qualified` requires a known contact, known organization, and intent to pursue a structured relationship.
 - `converted` can follow either the commercial path or the relationship-only path.

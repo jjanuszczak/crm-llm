@@ -1,5 +1,11 @@
 <main id="pipeline-board" class="pipeline-board">
   {% for stage in stages %}
+    {% if stage == "Discovery Opportunity" %}
+      <section class="conversion-boundary" aria-label="Lead conversion boundary">
+        <span>Convert</span>
+        <strong>Lead becomes CRM operating records</strong>
+      </section>
+    {% endif %}
     <section class="stage-column" aria-label="{{ stage }} stage">
       <header class="stage-header">
         <div>
@@ -32,6 +38,9 @@
             <div class="signal-row">
               {% if item.priority_or_probability %}
                 <span class="signal">{{ item.priority_or_probability }}</span>
+              {% endif %}
+              {% if item.next_motion %}
+                <span class="signal">{{ item.next_motion }}</span>
               {% endif %}
               {% if item.latest_activity_date %}
                 <span class="signal">Last {{ item.latest_activity_date }}</span>

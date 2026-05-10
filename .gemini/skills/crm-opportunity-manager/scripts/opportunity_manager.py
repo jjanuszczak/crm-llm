@@ -29,7 +29,7 @@ from navigation_manager import append_log_entry, rebuild_index, record_mutation 
 
 
 VALID_OPPORTUNITY_TYPES = {"advisory", "consulting", "financing", "hiring", "partnership", "other"}
-RECOMMENDED_STAGES = {"discovery", "qualified", "proposal", "negotiation", "closed-won", "closed-lost"}
+RECOMMENDED_STAGES = {"discovery", "qualified", "proposal", "negotiation", "paused", "closed-won", "closed-lost"}
 VALID_ACTIVITY_TYPES = {"call", "email", "meeting", "analysis", "note-derived"}
 VALID_ACTIVITY_STATUSES = {"completed", "scheduled", "cancelled"}
 VALID_TASK_STATUSES = {"todo", "waiting", "completed", "in-progress", "blocked", "done", "canceled"}
@@ -513,6 +513,7 @@ def cmd_create(args):
             "Source Lead": link_target_for_path(source_lead_path) if source_lead_path else "",
             "Organization Link": link_target_for_path(organization_path),
             "advisory | consulting | financing | hiring | partnership | other": args.opportunity_type,
+            "discovery | qualified | proposal | negotiation | paused | closed-won | closed-lost": args.stage,
             "manual | lead-conversion | referral | workspace-discovery": args.source,
             "Source Reference": args.source_ref or "",
             "opportunity-name": opportunity_name,

@@ -52,12 +52,23 @@
             </select>
           </label>
           <label>
-            <span>Stage</span>
+            <span>Journey Stage</span>
             <select name="stage">
-              <option value="all" {% if filters.stage == "all" %}selected{% endif %}>All stages</option>
+              <option value="all" {% if filters.stage == "all" %}selected{% endif %}>All journey stages</option>
               {% for stage in stages %}
                 <option value="{{ stage }}" {% if filters.stage == stage %}selected{% endif %}>{{ stage }}</option>
               {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Group</span>
+            <select name="lifecycle_group">
+              <option value="all" {% if filters.lifecycle_group == "all" %}selected{% endif %}>All groups</option>
+              <option value="lead-intake" {% if filters.lifecycle_group == "lead-intake" %}selected{% endif %}>Lead intake</option>
+              <option value="conversion-ready" {% if filters.lifecycle_group == "conversion-ready" %}selected{% endif %}>Conversion-ready</option>
+              <option value="opportunity-execution" {% if filters.lifecycle_group == "opportunity-execution" %}selected{% endif %}>Opportunity execution</option>
+              <option value="deferred-paused" {% if filters.lifecycle_group == "deferred-paused" %}selected{% endif %}>Deferred / paused</option>
+              <option value="closed" {% if filters.lifecycle_group == "closed" %}selected{% endif %}>Closed</option>
             </select>
           </label>
           <label class="check">

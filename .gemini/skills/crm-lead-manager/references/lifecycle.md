@@ -13,6 +13,14 @@ This reference defines the intended lead lifecycle and conversion outcomes for t
   - discovered through research
   - seen in inbox or staging but not yet worked
 
+### `prospect`
+- There is enough signal to keep the lead visible.
+- There is not yet enough relationship evidence to treat it as actively engaged.
+- Typical examples:
+  - likely relevant but only lightly researched
+  - known through a weak referral
+  - worth monitoring before outreach
+
 ### `engaged`
 - There is a known contact.
 - There has been real interaction, such as:
@@ -29,9 +37,19 @@ This is stronger than "we know about them." It means the relationship is active 
 - Qualification means "worth pursuing toward a durable CRM shape."
 - It does not necessarily mean there is already a fully defined commercial opportunity, only that the lead is ready to be worked with intentionally.
 
+### `deferred`
+- The lead remains viable, but active work should pause until a later review point.
+- Use this when the answer is "not now" rather than "no."
+- Pair `deferred` with an open `Task` using `status: waiting` and a future `due-date` so the review is reminder-driven.
+- Do not use `disqualified` unless the relationship is no longer worth pursuing based on current evidence.
+
 ### `converted`
 - The lead has been resolved into durable CRM records.
 - Conversion should happen only when the target operating model is clear.
+
+### `disqualified`
+- The lead is not viable based on current evidence.
+- Disqualification should preserve the record and rationale, because future revival may still happen.
 
 ## Conversion Outcomes
 
@@ -70,3 +88,4 @@ This is now implemented in [../scripts/lead_manager.py](../scripts/lead_manager.
 - If stable identity matters but there is no active commercial workflow, prefer `Organization + Contact`.
 - Do not create `Account` or `Opportunity` just because the lead is qualified.
 - Qualification is about relationship intent and readiness, not forced commercial modeling.
+- Use `deferred` when the lead is still potentially valuable but timing, readiness, or external dependency makes immediate action inappropriate.

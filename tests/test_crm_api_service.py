@@ -45,6 +45,27 @@ Proposal-stage opportunity summary.
             self._write(root / "Organizations/Example-Co.md", "---\norganization-name: \"Example Co\"\n---\n")
             self._write(root / "Contacts/Jane-Doe.md", "---\nfull-name: \"Jane Doe\"\n---\n")
             self._write(
+                root / "Leads/Deferred-Lead.md",
+                """---
+lead-name: "Deferred Lead"
+status: deferred
+priority: low
+---
+# Lead
+""",
+            )
+            self._write(
+                root / "Opportunities/Paused-Opp.md",
+                """---
+opportunity-name: "Paused Opportunity"
+stage: paused
+is-active: true
+probability: 20
+---
+# Opportunity
+""",
+            )
+            self._write(
                 root / "Tasks/2026/01/Follow-up.md",
                 """---
 task-name: "Follow up"
@@ -68,11 +89,17 @@ primary-parent: "[[Opportunities/Example-Opp]]"
             with patch.dict(os.environ, {"CRM_DATA_PATH": str(root)}):
                 pipeline = load_pipeline(active_only=False)
 
-            self.assertEqual(pipeline.stage_counts["Qualified"], 1)
+            self.assertEqual(pipeline.stage_counts["Qualified Lead"], 1)
             self.assertEqual(pipeline.stage_counts["Proposal"], 1)
+            self.assertEqual(pipeline.stage_counts["Deferred / Paused"], 2)
             opportunity = next(item for item in pipeline.items if item.record_type == "opportunity")
             self.assertEqual(opportunity.overdue_count, 1)
             self.assertEqual(opportunity.organization_or_account, "Example Co")
+            self.assertEqual(opportunity.next_motion, "Advance to negotiation")
+
+            with patch.dict(os.environ, {"CRM_DATA_PATH": str(root)}):
+                conversion_ready = load_pipeline(active_only=False, lifecycle_group="conversion-ready")
+            self.assertEqual([item.title for item in conversion_ready.items], ["Example Lead"])
 
             with patch.dict(os.environ, {"CRM_DATA_PATH": str(root)}):
                 detail = load_item_detail(opportunity.key)

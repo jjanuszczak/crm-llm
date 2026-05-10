@@ -1,7 +1,7 @@
 ---
 id: "{{lead-id}}"
 lead-name: "{{Lead Name}}"
-status: "{{Lead Status}}"
+status: "{{new | prospect | engaged | qualified | deferred | converted | disqualified}}"
 owner: "{{Owner}}"
 lead-source: "{{manual | gmail | calendar | inbox | referral | linkedin}}"
 person-name: "{{Person Name}}"

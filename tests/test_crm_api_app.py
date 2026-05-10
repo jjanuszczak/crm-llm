@@ -32,6 +32,7 @@ probability: 75
             payload = response.json()
             self.assertEqual(payload["counts"]["opportunities"], 1)
             self.assertEqual(payload["columns"]["Proposal"][0]["title"], "Example Opportunity")
+            self.assertEqual(payload["columns"]["Proposal"][0]["next_motion"], "Advance to negotiation")
 
     def _write(self, path: Path, content: str):
         path.parent.mkdir(parents=True, exist_ok=True)

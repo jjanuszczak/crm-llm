@@ -11,7 +11,7 @@ source-lead: "[[{{Source Lead}}]]"
 organization: "[[Organizations/{{Organization Link}}]]"
 opportunity-type: "{{advisory | consulting | financing | hiring | partnership | other}}"
 is-active: true
-stage: discovery
+stage: "{{discovery | qualified | proposal | negotiation | paused | closed-won | closed-lost}}"
 commercial-value: 0
 close-date: {{YYYY-MM-DD}}
 probability: 10

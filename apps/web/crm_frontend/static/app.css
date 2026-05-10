@@ -159,10 +159,10 @@ h1 {
 
 .pipeline-board {
   display: grid;
-  grid-template-columns: repeat(6, minmax(220px, 1fr));
+  grid-template-columns: repeat(4, minmax(220px, 1fr)) 74px repeat(7, minmax(220px, 1fr));
   gap: 12px;
   align-items: start;
-  width: max(100%, 1320px);
+  width: max(100%, 2840px);
   padding-bottom: 8px;
 }
 
@@ -193,6 +193,48 @@ h1 {
   margin: 0;
   color: #cdd2dc;
   font-size: 0.78rem;
+}
+
+.conversion-boundary {
+  position: sticky;
+  top: 78px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  min-height: 480px;
+  padding: 12px 8px;
+  color: var(--panel-strong);
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(14, 124, 134, 0.11),
+    rgba(14, 124, 134, 0.11) 10px,
+    rgba(255, 253, 248, 0.8) 10px,
+    rgba(255, 253, 248, 0.8) 20px
+  );
+  border: 1px dashed rgba(14, 124, 134, 0.55);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.conversion-boundary span,
+.conversion-boundary strong {
+  display: block;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.conversion-boundary span {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.conversion-boundary strong {
+  max-height: 310px;
+  margin-top: 12px;
+  font-size: 0.82rem;
+  line-height: 1.15;
 }
 
 .card-stack {
@@ -544,7 +586,8 @@ h1 {
 
   .pipeline-board {
     min-width: 680px;
-    grid-template-columns: repeat(2, minmax(260px, 1fr));
+    width: max(100%, 2840px);
+    grid-template-columns: repeat(4, minmax(220px, 1fr)) 74px repeat(7, minmax(220px, 1fr));
   }
 
   .drawer {
@@ -558,9 +601,26 @@ h1 {
   }
 
   .metric-strip,
-  .pipeline-board,
   .drawer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .pipeline-board {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .conversion-boundary {
+    position: static;
+    min-height: auto;
+    padding: 14px;
+  }
+
+  .conversion-boundary span,
+  .conversion-boundary strong {
+    writing-mode: horizontal-tb;
+    transform: none;
   }
 
   .drawer {

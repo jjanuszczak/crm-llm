@@ -32,10 +32,12 @@ Useful lead context.
                 self.assertEqual(response.status_code, 200)
                 self.assertIn("Pipeline Command Center", response.text)
                 self.assertIn("Example Lead", response.text)
+                self.assertIn("Qualified Lead", response.text)
+                self.assertIn("Lead becomes CRM operating records", response.text)
                 self.assertIn("drawer empty is-collapsed", response.text)
                 self.assertIn("data-drawer-toggle", response.text)
 
-                pipeline = client.get("/pipeline?record_type=lead&stage=Qualified&active_only=false")
+                pipeline = client.get("/pipeline?record_type=lead&stage=Qualified%20Lead&active_only=false")
                 self.assertEqual(pipeline.status_code, 200)
                 self.assertIn("Example Lead", pipeline.text)
 

@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 
-from .service import PIPELINE_STAGES, CrmRecord, PipelineData, PipelineItem, load_item_detail, load_pipeline
+from .service import PIPELINE_STAGE_GROUPS, PIPELINE_STAGES, CrmRecord, PipelineData, PipelineItem, load_item_detail, load_pipeline
 
 
 app = FastAPI(title="CRM Logic API", description="Read-only API for the markdown-backed CRM.")
@@ -21,9 +21,10 @@ def pipeline(
     stage: str = Query("all"),
     active_only: bool = Query(True),
     attention_only: bool = Query(False),
+    lifecycle_group: str = Query("all"),
 ) -> dict[str, Any]:
     try:
-        return serialize_pipeline(load_pipeline(record_type, stage, active_only, attention_only))
+        return serialize_pipeline(load_pipeline(record_type, stage, active_only, attention_only, lifecycle_group))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -40,6 +41,7 @@ def serialize_pipeline(data: PipelineData) -> dict[str, Any]:
     return {
         "crm_data_path": str(data.crm_data_path),
         "stages": PIPELINE_STAGES,
+        "stage_groups": {key: sorted(value) for key, value in PIPELINE_STAGE_GROUPS.items()},
         "counts": data.counts,
         "stage_counts": data.stage_counts,
         "columns": {
@@ -74,6 +76,7 @@ def serialize_pipeline_item(item: PipelineItem) -> dict[str, Any]:
         "priority_or_probability": item.priority_or_probability,
         "priority_rank": item.priority_rank,
         "latest_activity_date": item.latest_activity_date,
+        "next_motion": item.next_motion,
         "task_count": item.task_count,
         "overdue_count": item.overdue_count,
         "needs_attention": item.needs_attention,

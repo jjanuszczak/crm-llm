@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from apps.api.crm_api.service import PIPELINE_STAGES, load_item_detail, load_pipeline
+from apps.api.crm_api.service import PIPELINE_STAGE_GROUPS, PIPELINE_STAGES, load_item_detail, load_pipeline
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -24,9 +24,10 @@ def dashboard(
     stage: str = Query("all"),
     active_only: bool = Query(True),
     attention_only: bool = Query(False),
+    lifecycle_group: str = Query("all"),
 ) -> HTMLResponse:
     try:
-        pipeline = load_pipeline(record_type, stage, active_only, attention_only)
+        pipeline = load_pipeline(record_type, stage, active_only, attention_only, lifecycle_group)
     except FileNotFoundError as exc:
         return templates.TemplateResponse(
             request,
@@ -40,11 +41,13 @@ def dashboard(
         {
             "pipeline": pipeline,
             "stages": PIPELINE_STAGES,
+            "stage_groups": PIPELINE_STAGE_GROUPS,
             "filters": {
                 "record_type": record_type,
                 "stage": stage,
                 "active_only": active_only,
                 "attention_only": attention_only,
+                "lifecycle_group": lifecycle_group,
             },
         },
     )
@@ -57,9 +60,10 @@ def pipeline_partial(
     stage: str = Query("all"),
     active_only: bool = Query(True),
     attention_only: bool = Query(False),
+    lifecycle_group: str = Query("all"),
 ) -> HTMLResponse:
     try:
-        pipeline = load_pipeline(record_type, stage, active_only, attention_only)
+        pipeline = load_pipeline(record_type, stage, active_only, attention_only, lifecycle_group)
     except FileNotFoundError as exc:
         return templates.TemplateResponse(request, "error_panel.html", {"message": str(exc)}, status_code=500)
     return templates.TemplateResponse(request, "pipeline.html", {"pipeline": pipeline, "stages": PIPELINE_STAGES})

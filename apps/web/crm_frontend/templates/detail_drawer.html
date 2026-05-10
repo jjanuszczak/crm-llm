@@ -1,0 +1,89 @@
+<aside id="detail-drawer" class="drawer" aria-live="polite">
+  <button class="drawer-toggle" type="button" data-drawer-toggle aria-label="Close details panel">Close</button>
+  <div class="drawer-header">
+    <div>
+      <p class="eyebrow">{{ item.record_type }} / {{ item.normalized_stage }}</p>
+      <h2>{{ item.title }}</h2>
+      <p>{{ item.organization_or_account }}{% if item.person_or_contact and item.organization_or_account %} / {% endif %}{{ item.person_or_contact }}</p>
+    </div>
+    <div class="drawer-actions">
+      <span class="drawer-badge">{{ item.native_stage }}</span>
+      <button class="drawer-close" type="button" data-drawer-toggle aria-label="Close details panel">Close</button>
+    </div>
+  </div>
+
+  <section class="drawer-section">
+    <h3>Summary</h3>
+    <p>{{ summary or "No summary text found in the record body." }}</p>
+  </section>
+
+  <section class="drawer-grid">
+    <div>
+      <span>Signal</span>
+      <strong>{{ item.priority_or_probability or "N/A" }}</strong>
+    </div>
+    <div>
+      <span>Latest Activity</span>
+      <strong>{{ item.latest_activity_date or "None" }}</strong>
+    </div>
+    <div>
+      <span>Open Tasks</span>
+      <strong>{{ item.task_count }}</strong>
+    </div>
+    <div>
+      <span>Overdue</span>
+      <strong>{{ item.overdue_count }}</strong>
+    </div>
+  </section>
+
+  <section class="drawer-section">
+    <h3>Linked Context</h3>
+    <div class="link-list">
+      {% for link in links %}
+        <span><strong>{{ link.kind }}</strong>{{ link.label }}</span>
+      {% else %}
+        <span class="muted">No linked context found.</span>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="drawer-section">
+    <h3>Open Tasks</h3>
+    <div class="timeline">
+      {% for task in tasks %}
+        <div class="timeline-item">
+          <strong>{{ task.frontmatter.get("task-name") or task.path.stem }}</strong>
+          <span>{{ task.frontmatter.get("status") or "unknown" }}{% if task.frontmatter.get("due-date") %} / due {{ task.frontmatter.get("due-date") }}{% endif %}</span>
+        </div>
+      {% else %}
+        <p class="muted">No linked tasks.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="drawer-section">
+    <h3>Recent Activity</h3>
+    <div class="timeline">
+      {% for activity in activities %}
+        <div class="timeline-item">
+          <strong>{{ activity.frontmatter.get("activity-name") or activity.path.stem }}</strong>
+          <span>{{ activity.frontmatter.get("date") or "undated" }} / {{ activity.frontmatter.get("activity-type") or "activity" }}</span>
+        </div>
+      {% else %}
+        <p class="muted">No linked activities.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="drawer-section compact">
+    <h3>Source Fields</h3>
+    <dl class="field-list">
+      {% for key, value in frontmatter %}
+        <div>
+          <dt>{{ key }}</dt>
+          <dd>{{ value }}</dd>
+        </div>
+      {% endfor %}
+    </dl>
+  </section>
+</aside>

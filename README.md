@@ -21,6 +21,14 @@ This repo gives an agent or developer the machinery to:
 
 The current canonical schema lives in `docs/schema-spec.md`.
 
+## Application Layout
+
+- `apps/api/`: standalone read-only FastAPI API for programmatic consumers building their own CRM clients.
+- `apps/web/`: local FastAPI HTML application for the read-only dashboard MVP.
+- `apps/cli/`: reserved application package for future first-class CLI UX.
+- `scripts/`: current operational utilities and lower-level CRM workflow helpers.
+- Web and future CLI surfaces may call the API service layer where appropriate, but web-specific routes/templates/static assets should stay out of `apps/api/` and CLI command code should stay out of `apps/web/`.
+
 ## Start Here Fast
 
 If you are a new agent or developer and need to get productive quickly, read in this order:
@@ -194,6 +202,25 @@ Sync CRM tasks to Google Tasks:
 ```bash
 python3 .gemini/skills/crm-sync-google-tasks/scripts/sync-tasks.py
 ```
+
+Run the local CRM web dashboard:
+
+```bash
+uv sync
+CRM_DATA_PATH=./crm-data uv run uvicorn apps.web.crm_frontend.app:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Then open `http://127.0.0.1:8000`.
+
+The web dashboard lives under `apps/web/` and is read-only in the MVP. It live-reads `Leads/`, `Opportunities/`, and linked CRM context from `CRM_DATA_PATH`; it does not mutate markdown records, `index.md`, or `log.md`.
+
+Run the standalone read-only CRM API:
+
+```bash
+CRM_DATA_PATH=./crm-data uv run uvicorn apps.api.crm_api.app:app --host 127.0.0.1 --port 8001 --reload
+```
+
+The API exposes JSON endpoints such as `/pipeline` and `/records/{item_key}` for custom clients.
 
 ## Day-To-Day Operating Loop
 

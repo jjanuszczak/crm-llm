@@ -1,0 +1,16 @@
+[project]
+name = "crm-logic"
+version = "0.1.0"
+description = "Logic and local web frontend for a markdown-backed personal CRM."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "jinja2>=3.1",
+    "pyyaml>=6.0",
+    "uvicorn[standard]>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27",
+]

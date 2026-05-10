@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CRM Pipeline Command Center</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+    <script src="{{ url_for('static', path='/app.js') }}" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Markdown CRM</p>
+          <h1>Pipeline Command Center</h1>
+          <p class="subhead">Live read-only view of leads and opportunities from {{ pipeline.crm_data_path }}</p>
+        </div>
+        <div class="metric-strip" aria-label="Pipeline metrics">
+          <div class="metric">
+            <span>{{ pipeline.counts.total }}</span>
+            <strong>Visible</strong>
+          </div>
+          <div class="metric">
+            <span>{{ pipeline.counts.opportunities }}</span>
+            <strong>Opportunities</strong>
+          </div>
+          <div class="metric">
+            <span>{{ pipeline.counts.leads }}</span>
+            <strong>Leads</strong>
+          </div>
+          <div class="metric attention">
+            <span>{{ pipeline.counts.overdue }}</span>
+            <strong>Overdue Tasks</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="control-band" aria-label="Pipeline filters">
+        <form
+          class="filters"
+          hx-get="/pipeline"
+          hx-target="#pipeline-board"
+          hx-swap="outerHTML"
+          hx-trigger="change"
+        >
+          <label>
+            <span>Type</span>
+            <select name="record_type">
+              <option value="all" {% if filters.record_type == "all" %}selected{% endif %}>All</option>
+              <option value="lead" {% if filters.record_type == "lead" %}selected{% endif %}>Leads</option>
+              <option value="opportunity" {% if filters.record_type == "opportunity" %}selected{% endif %}>Opportunities</option>
+            </select>
+          </label>
+          <label>
+            <span>Stage</span>
+            <select name="stage">
+              <option value="all" {% if filters.stage == "all" %}selected{% endif %}>All stages</option>
+              {% for stage in stages %}
+                <option value="{{ stage }}" {% if filters.stage == stage %}selected{% endif %}>{{ stage }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="check">
+            <input type="hidden" name="active_only" value="false">
+            <input type="checkbox" name="active_only" value="true" {% if filters.active_only %}checked{% endif %}>
+            <span>Open only</span>
+          </label>
+          <label class="check">
+            <input type="hidden" name="attention_only" value="false">
+            <input type="checkbox" name="attention_only" value="true" {% if filters.attention_only %}checked{% endif %}>
+            <span>Needs attention</span>
+          </label>
+        </form>
+      </section>
+
+      {% include "pipeline.html" %}
+    </div>
+
+    <aside id="detail-drawer" class="drawer empty is-collapsed" aria-live="polite">
+      <button class="drawer-toggle" type="button" data-drawer-toggle aria-label="Open details panel">Details</button>
+      <div class="drawer-empty-state">
+        <span class="empty-mark">Select</span>
+        <h2>Choose a pipeline item</h2>
+        <p>Click a lead or opportunity card to inspect linked context, recent activity, and open tasks.</p>
+      </div>
+    </aside>
+  </body>
+</html>

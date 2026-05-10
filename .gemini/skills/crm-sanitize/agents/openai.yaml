@@ -1,0 +1,4 @@
+interface:
+  display_name: "CRM Sanitize"
+  short_description: "Scan and sanitize private CRM data from the repo"
+  default_prompt: "Scan this CRM logic repo for private CRM data leakage and propose or apply conservative sanitization steps."

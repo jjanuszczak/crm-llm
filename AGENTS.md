@@ -361,7 +361,6 @@ When reviewing PRs or script changes:
 
 ### Recent migration helpers
 - `scripts/migrate_accounts_to_organizations.py`
-- `scripts/rewrite_organization_references.py`
 - `scripts/migrate_opportunities_v41.py`
 
 These migration scripts reflect real structural work already done. Use them as references for future migrations, not as permanent day-to-day entry points.

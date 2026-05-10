@@ -384,7 +384,6 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 - [intelligence-engine.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/intelligence-engine.py#L1): telemetry and intelligence generation
 - [matchmaker.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/matchmaker.py#L1): deal/account matching
 - [migrate_accounts_to_organizations.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/migrate_accounts_to_organizations.py#L1): reference migration helper
-- [rewrite_organization_references.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/rewrite_organization_references.py#L1): reference rewrite helper
 - [migrate_opportunities_v41.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/migrate_opportunities_v41.py#L1): opportunity schema migration helper
 
 ## Recommended Reading

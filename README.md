@@ -268,6 +268,16 @@ Current ingest behavior is broader than just Gmail / Calendar:
 - a later additive Drive pass can ingest CRM-labeled Google Docs that were updated since the sync window
 - a later optional Granola pass can create deduped Activities and Tasks from recent meetings if local Codex + Granola MCP are configured
 
+Codex desktop operational note:
+- `gws` needs live Google API network access; restricted sandbox runs can fail before Gmail / Calendar ingest starts with DNS or host-resolution errors.
+- For the recurring CRM daily automation, use the approved unrestricted command form:
+
+```bash
+/bin/zsh -lc 'set -a; [ -f .env ] && . ./.env; set +a; CRM_DATA_PATH=${CRM_DATA_PATH:-./crm-data} python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py --autonomous --auto-tier 1'
+```
+
+- If a sandboxed attempt hits a Google API network error, rerun that command with escalation before treating Workspace ingest as blocked.
+
 Current staging / audit files you should expect from ingest:
 - `crm-data/staging/activity_updates.json`
 - `crm-data/staging/contact_discoveries.json`

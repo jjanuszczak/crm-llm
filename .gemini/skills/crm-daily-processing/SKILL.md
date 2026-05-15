@@ -27,6 +27,12 @@ Do not use this skill for one-off record creation when a narrower skill is clear
 
 2. **Run Workspace Intake**
    * Run the canonical Workspace ingest flow via `crm-ingest-gws`.
+   * In Codex desktop, Gmail / Calendar / Drive ingest must be run outside the restricted sandbox because `gws` needs live Google API network access. Use the already-approved escalation path:
+     ```bash
+     /bin/zsh -lc 'set -a; [ -f .env ] && . ./.env; set +a; CRM_DATA_PATH=${CRM_DATA_PATH:-./crm-data} python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py --autonomous --auto-tier 1'
+     ```
+   * If a first attempt fails with DNS, host resolution, or Google API connection errors, immediately rerun the same command with escalation instead of ending the daily loop as blocked.
+   * Do not use a different `--auto-tier` value in the recurring automation unless the command approval has been updated; changing that value can bypass the saved approval and recreate the sandbox failure.
    * Review staged files in `CRM_DATA_PATH/staging/`, especially:
      * `activity_updates.json`
      * `contact_discoveries.json`

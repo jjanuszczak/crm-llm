@@ -150,6 +150,7 @@ LEGACY_WORKSPACE_UPDATES_PATH = os.path.join(STAGING_DIR, "workspace_updates.jso
 LEGACY_DISCOVERY_PATH = os.path.join(STAGING_DIR, "discovery.json")
 DRIVE_DOCUMENT_UPDATES_PATH = os.path.join(STAGING_DIR, "drive_document_updates.json")
 GRANOLA_UPDATES_PATH = os.path.join(STAGING_DIR, "granola_updates.json")
+CALENDAR_EVENTS_CACHE_PATH = os.path.join(STAGING_DIR, "calendar_events_cache.json")
 DEFAULT_CRM_DRIVE_LABEL_IDS = ["3qkuqYdjtgsnmboRjKmMiGOHl1MFONMnSuaSNNEbbFcb"]
 GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 DEFAULT_GRANOLA_LOOKBACK_DAYS = 7
@@ -408,6 +409,95 @@ def summarize_text(text, limit=400):
     return cleaned[:limit].strip()
 
 
+def clean_source_text_for_activity(text):
+    lines = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            continue
+        if re.match(r"^(from|sent|to|cc|subject|date):\s", line, re.I):
+            continue
+        if re.match(r"^on .+ wrote:?\s*$", line, re.I):
+            continue
+        if re.search(r"get outlook for ios|confidentiality notice|unsubscribe|manage preferences|external email", line, re.I):
+            continue
+        if re.fullmatch(r"[-_=]{3,}", line):
+            continue
+        lines.append(line)
+    cleaned = re.sub(r"https?://\S+", "", " ".join(lines))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def sentence_candidates(text, max_sentences=5):
+    sentences = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        cleaned = sentence.strip(" -*\t")
+        if not 20 <= len(cleaned) <= 260:
+            continue
+        if re.search(r"\b(from|sent|subject|unsubscribe|confidentiality notice)\b", cleaned, re.I):
+            continue
+        sentences.append(cleaned)
+        if len(sentences) >= max_sentences:
+            break
+    return sentences
+
+
+def human_join(items):
+    values = [str(item).strip() for item in items if str(item).strip()]
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return ", ".join(values[:-1]) + f", and {values[-1]}"
+
+
+def summarize_activity_event(event, matched_names):
+    source_type = event.get("source_type", "workspace")
+    title = str(event.get("subject_or_title") or "Workspace interaction").strip()
+    clean_text = clean_source_text_for_activity(event.get("body_text") or event.get("snippet", ""))
+    sentences = sentence_candidates(clean_text, 3)
+    context = human_join(matched_names[:3])
+    direction = event.get("direction", "")
+
+    if source_type == "calendar":
+        summary = f"Calendar event logged: {title}."
+    elif source_type == "drive":
+        summary = f"CRM-labeled Drive document reviewed: {title}."
+    elif direction == "outbound":
+        summary = f"John sent a Gmail update about {title}."
+    elif direction == "inbound":
+        summary = f"Inbound Gmail update received about {title}."
+    else:
+        summary = f"Gmail thread updated: {title}."
+
+    if context:
+        summary += f" Matched CRM context: {context}."
+    if sentences:
+        summary += " " + " ".join(sentences[:2])
+    return summarize_text(summary, 520)
+
+
+def activity_outcome_lines(event):
+    clean_text = clean_source_text_for_activity(event.get("body_text") or event.get("snippet", ""))
+    lowered = clean_text.lower()
+    outcomes = [f"Logged {event.get('source_type', 'workspace')} interaction dated {event['event_time'][:10]}."]
+
+    if re.search(r"\b(attached|attachment|shared|sent over|sending over)\b", lowered):
+        outcomes.append("Captured that material was shared or attached.")
+    if re.search(r"\b(reviewed|looks standard|approved|confirmed|works for me|getting started)\b", lowered):
+        outcomes.append("Captured review / confirmation signal.")
+    if re.search(r"\b(revert|circle back|get back|follow up|next step|next steps)\b", lowered):
+        outcomes.append("Captured follow-up dependency.")
+    if re.search(r"\b(schedule|scheduled|calendar|invite|meet|call)\b", lowered):
+        outcomes.append("Captured scheduling or meeting-logistics signal.")
+    return outcomes[:4]
+
+
 def search_tokens(text, limit=4):
     tokens = []
     for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9&.-]{2,}", text or ""):
@@ -521,6 +611,28 @@ class SourceHarvester:
                 events.append(item)
         return events
 
+    def get_calendar_events_window(self, start_dt, end_dt):
+        listing = run_gws(
+            [
+                "gws",
+                "calendar",
+                "events",
+                "list",
+                "--params",
+                json.dumps(
+                    {
+                        "calendarId": "primary",
+                        "timeMin": start_dt.isoformat().replace("+00:00", "Z"),
+                        "timeMax": end_dt.isoformat().replace("+00:00", "Z"),
+                        "showDeleted": False,
+                        "singleEvents": True,
+                        "orderBy": "startTime",
+                    }
+                ),
+            ]
+        )
+        return listing.get("items", []) if isinstance(listing, dict) else []
+
     def get_labeled_drive_documents(self, label_ids):
         if not label_ids:
             return []
@@ -605,6 +717,7 @@ class EventNormalizer:
             )
 
         start = event.get("start", {})
+        end = event.get("end", {})
         event_time = start.get("dateTime") or start.get("date")
         return {
             "source_type": "calendar",
@@ -612,6 +725,9 @@ class EventNormalizer:
             "source_link": event.get("htmlLink", ""),
             "thread_id": None,
             "event_time": event_time,
+            "end_time": end.get("dateTime") or end.get("date"),
+            "location": event.get("location", ""),
+            "status": event.get("status", ""),
             "direction": "meeting",
             "participants": participants,
             "subject_or_title": event.get("summary", "(untitled event)"),
@@ -1518,25 +1634,27 @@ def build_activity_body(event, note_links, resolutions):
             elif resolution["match_type"] == "company_context":
                 matched_names.extend([context["name"] for context in resolution.get("company_contexts", [])[:2]])
     matched_names = sorted({name for name in matched_names if name})
-    body_text = summarize_text(event.get("body_text") or event.get("snippet", ""), 900)
+    summary = summarize_activity_event(event, matched_names)
+    source_excerpt = summarize_text(clean_source_text_for_activity(event.get("body_text") or event.get("snippet", "")), 260)
     note_summary = NotesAnalyzer.get_note_summary(event)
     lines = [
         f"# **Activity: {event['subject_or_title']}**",
         "",
         "## **Executive Summary / Objective**",
-        body_text or "Interaction logged from workspace ingestion.",
+        summary or "Interaction logged from workspace ingestion.",
         "",
         "## **Outcomes**",
-        f"- [x] Logged {event['source_type']} interaction dated {event['event_time'][:10]}.",
     ]
+    for outcome in activity_outcome_lines(event):
+        lines.append(f"- [x] {outcome}")
     if matched_names:
         lines.append(f"- [x] Matched CRM context: {', '.join(matched_names)}.")
     if participants:
         lines.extend(["", "## **Detailed Notes**", f"* **Participants:** {participants}."])
     else:
         lines.extend(["", "## **Detailed Notes**", "* **Participants:** Not available."])
-    if body_text:
-        lines.append(f"* **Source Summary:** {body_text}")
+    if source_excerpt:
+        lines.append(f"* **Source Excerpt:** {source_excerpt}")
     if note_summary:
         lines.extend(["", "## **Strategic Insights**", note_summary])
     return "\n".join(lines).rstrip() + "\n"
@@ -2720,6 +2838,25 @@ def main():
         event = EventNormalizer.normalize_calendar(calendar_event)
         event["_thread_context"] = {}
         process_event(event)
+
+    try:
+        calendar_cache_start = now - timedelta(days=1)
+        calendar_cache_end = now + timedelta(days=14)
+        calendar_cache_events = [
+            EventNormalizer.normalize_calendar(calendar_event)
+            for calendar_event in harvester.get_calendar_events_window(calendar_cache_start, calendar_cache_end)
+        ]
+        save_json(
+            CALENDAR_EVENTS_CACHE_PATH,
+            {
+                "generated_at": now.isoformat().replace("+00:00", "Z"),
+                "window_start": calendar_cache_start.isoformat().replace("+00:00", "Z"),
+                "window_end": calendar_cache_end.isoformat().replace("+00:00", "Z"),
+                "events": calendar_cache_events,
+            },
+        )
+    except RuntimeError as exc:
+        audit_log["actions"].append({"result": "calendar_cache_refresh_failed", "error": str(exc)})
 
     for file_item in harvester.get_labeled_drive_documents(resolve_crm_drive_label_ids()):
         file_id = str(file_item.get("id") or "").strip()

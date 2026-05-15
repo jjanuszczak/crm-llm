@@ -26,6 +26,14 @@ The current script exists and is usable:
 python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py [--since YYYY-MM-DD] [--auto-tier N] [--skip-granola]
 ```
 
+Codex desktop execution note: this script calls `gws`, which must reach Gmail, Calendar, Docs, and Drive APIs. In the restricted Codex sandbox this commonly fails with DNS / host-resolution errors before ingest starts. For the recurring CRM daily automation, run it through the approved unrestricted command path:
+
+```bash
+/bin/zsh -lc 'set -a; [ -f .env ] && . ./.env; set +a; CRM_DATA_PATH=${CRM_DATA_PATH:-./crm-data} python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py --autonomous --auto-tier 1'
+```
+
+If a sandboxed attempt fails with a Google API network error, rerun the same command with escalation immediately. Do not report the daily automation as blocked until that unrestricted rerun has also failed.
+
 But the current implementation is not yet fully aligned with:
 - the newer lead lifecycle
 - the split review queues
@@ -97,6 +105,8 @@ This skill uses a three-tier model:
 
 Rules:
 - Tier 1 activity writing stays enabled
+- auto-written Activity bodies must summarize the source event into CRM memory; do not paste or truncate the raw email/calendar text as the executive summary
+- preserve source provenance through `source`, `source-ref`, `email-link`, `meeting-notes`, and at most a short source excerpt for auditability
 - no automatic lead stage change
 - no automatic task completion
 - no automatic opportunity creation from inferred context unless explicitly added later

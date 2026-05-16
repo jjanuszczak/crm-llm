@@ -256,7 +256,7 @@ def build_lead_item(record: CrmRecord, crm_data_path: Path, tasks: list[CrmRecor
         native_stage=native_stage or "new",
         normalized_stage=normalize_lead_stage(native_stage),
         person_or_contact=text(record.frontmatter.get("person-name")),
-        organization_or_account=text(record.frontmatter.get("company-name")),
+        organization_or_account=display_name(record.frontmatter.get("company-name"), crm_data_path),
         priority_or_probability=text(record.frontmatter.get("priority") or "medium"),
         priority_rank=priority_rank(record.frontmatter.get("priority")),
         latest_activity_date=latest_activity(record, activities),

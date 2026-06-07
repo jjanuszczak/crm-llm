@@ -1985,11 +1985,71 @@ def granola_event_from_meeting(meeting):
     }
 
 
+GRANOLA_GENERIC_ANCHOR_TOKENS = {
+    "account",
+    "advisory",
+    "bank",
+    "buyer",
+    "capital",
+    "company",
+    "contact",
+    "corporation",
+    "development",
+    "energy",
+    "finance",
+    "financial",
+    "funding",
+    "global",
+    "group",
+    "international",
+    "investment",
+    "limited",
+    "management",
+    "meeting",
+    "opportunity",
+    "partners",
+    "real",
+    "sale",
+    "security",
+    "services",
+    "systems",
+    "transaction",
+    "ventures",
+}
+
+
 def granola_anchor_for_event(event, crm_index):
     attendee_text = " ".join(participant.get("name", "") for participant in event.get("participants", []))
     title = event.get("subject_or_title", "")
     body_text = event.get("body_text", "")
-    return infer_anchor_from_text(title, f"{body_text}\n{attendee_text}", crm_index)
+    combined = f"{title}\n{body_text}\n{attendee_text}".lower()
+    combined_tokens = set(search_tokens(combined, limit=80)) - GRANOLA_GENERIC_ANCHOR_TOKENS
+    candidates = []
+    seen = set()
+    type_priority = {"opportunity": 0, "contact": 1, "lead": 2, "account": 3, "organization": 4, "deal": 5}
+
+    for record in crm_index.all_records:
+        record_type = str(record.get("type", "")).lower()
+        if record_type not in type_priority or record["link"] in seen:
+            continue
+        seen.add(record["link"])
+        name = str(record.get("name", "")).strip()
+        if not name:
+            continue
+        lowered_name = name.lower()
+        exact_name_match = bool(lowered_name and lowered_name in combined)
+        name_tokens = set(search_tokens(name, limit=10)) - GRANOLA_GENERIC_ANCHOR_TOKENS
+        overlap = combined_tokens & name_tokens
+        if not exact_name_match and len(overlap) < 2:
+            continue
+        score = (6 if exact_name_match else 0) + len(overlap)
+        candidates.append((score, type_priority[record_type], record))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]["name"]))
+    record = candidates[0][2]
+    return {"type": str(record.get("type", "")).lower(), "record": record}
 
 
 def granola_secondary_links(primary_anchor, crm_index):

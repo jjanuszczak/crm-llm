@@ -6,7 +6,7 @@ headquarters: "String"
 industry: "String"
 size: 0
 url: "URL"
-organization-class: "investor" | "operating-company" | "financial-institution" | "government" | "service-provider" | "other"
+organization-class: "{{organization-class}}"
 organization-subtype: "String"
 investment-mandate: []
 check-size: "String"

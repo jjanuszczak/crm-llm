@@ -42,6 +42,7 @@ def create_organization(args):
             "domain": args.domain or "",
             "Owner": args.owner,
             "Source Reference": args.source_ref or "",
+            "organization-class": args.organization_class,
             "manual | lead-conversion | referral | workspace-discovery": args.source,
             "URL": args.url or "",
             "String": "",

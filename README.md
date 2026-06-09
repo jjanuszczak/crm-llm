@@ -1,4 +1,4 @@
-# CRM Logic
+# CRM LLM
 
 This repo contains the logic, templates, scripts, and skill instructions for a private AI-first personal CRM built on a markdown/git vault.
 
@@ -54,7 +54,7 @@ Use this distinction:
 ## Mental Model
 
 Think in two layers:
-- `crm-logic/`: public-friendly logic layer
+- `crm-llm/`: public-friendly logic layer
 - `crm-data/`: private vault and operational system of record
 
 The vault is where the real work happens. The logic layer exists to read, write, enrich, and synthesize that vault.

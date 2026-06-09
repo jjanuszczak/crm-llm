@@ -1,5 +1,5 @@
 [project]
-name = "crm-logic"
+name = "crm-llm"
 version = "0.1.0"
 description = "Logic and local web frontend for a markdown-backed personal CRM."
 requires-python = ">=3.11"

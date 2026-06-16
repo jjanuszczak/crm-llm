@@ -5,6 +5,8 @@ import html
 import json
 import os
 import re
+import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -154,7 +156,9 @@ CALENDAR_EVENTS_CACHE_PATH = os.path.join(STAGING_DIR, "calendar_events_cache.js
 DEFAULT_CRM_DRIVE_LABEL_IDS = ["3qkuqYdjtgsnmboRjKmMiGOHl1MFONMnSuaSNNEbbFcb"]
 GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 DEFAULT_GRANOLA_LOOKBACK_DAYS = 7
+DEFAULT_WHATSAPP_LOOKBACK_DAYS = 7
 GRANOLA_POST_INGEST_TIMEOUT_SECONDS = 180
+WHATSAPP_UPDATES_PATH = os.path.join(STAGING_DIR, "whatsapp_updates.json")
 
 
 def ensure_dirs():
@@ -204,6 +208,39 @@ def granola_initial_lookback_days():
     except (TypeError, ValueError):
         return DEFAULT_GRANOLA_LOOKBACK_DAYS
     return max(1, min(parsed, 30))
+
+
+def whatsapp_post_ingest_enabled():
+    settings = load_settings()
+    value = settings.get("whatsapp_post_ingest_enabled")
+    if value is None:
+        return False
+    return bool(value)
+
+
+def whatsapp_initial_lookback_days():
+    settings = load_settings()
+    value = settings.get("whatsapp_post_ingest_lookback_days")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_WHATSAPP_LOOKBACK_DAYS
+    return max(1, min(parsed, 30))
+
+
+def whatsapp_account_name():
+    settings = load_settings()
+    return str(settings.get("whatsapp_account") or "").strip()
+
+
+def whatsapp_store_dir():
+    settings = load_settings()
+    value = str(settings.get("whatsapp_store_dir") or "").strip()
+    if not value:
+        return ""
+    if os.path.isabs(value):
+        return value
+    return os.path.abspath(os.path.join(PROJECT_ROOT, value))
 
 
 def resolve_own_emails():
@@ -305,6 +342,158 @@ def iso_today():
 def parse_email_addresses(value):
     matches = re.findall(r"[\w.\-+%]+@[\w.\-]+\.\w+", value or "")
     return [match.lower() for match in matches]
+
+
+def normalize_phone_number(value):
+    digits = re.sub(r"\D+", "", str(value or ""))
+    if not digits:
+        return ""
+    return digits.lstrip("0") or digits
+
+
+def extract_phone_numbers(value):
+    text = str(value or "")
+    candidates = re.findall(r"\+?\d[\d\s().-]{6,}\d", text)
+    numbers = []
+    seen = set()
+    for candidate in candidates:
+        normalized = normalize_phone_number(candidate)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            numbers.append(normalized)
+    return numbers
+
+
+def phone_from_jid(jid):
+    match = re.match(r"(\d+)@s\.whatsapp\.net$", str(jid or "").strip().lower())
+    if not match:
+        return ""
+    return normalize_phone_number(match.group(1))
+
+
+def is_whatsapp_group_jid(jid):
+    return str(jid or "").strip().lower().endswith("@g.us")
+
+
+def is_whatsapp_channel_jid(jid):
+    return str(jid or "").strip().lower().endswith("@newsletter")
+
+
+def default_wacli_store_dir():
+    home = os.path.expanduser("~")
+    if sys.platform == "linux":
+        xdg = os.getenv("XDG_STATE_HOME")
+        if xdg:
+            return os.path.join(xdg, "wacli")
+        return os.path.join(home, ".local", "state", "wacli")
+    return os.path.join(home, ".wacli")
+
+
+def extract_wacli_store_dir(payload):
+    candidates = []
+
+    def collect(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                lowered = str(key).lower()
+                if lowered in {"path", "store", "store_dir", "dir"} and isinstance(value, str):
+                    candidates.append(value)
+                collect(value)
+        elif isinstance(node, list):
+            for item in node:
+                collect(item)
+
+    collect(payload)
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text and os.path.isdir(text):
+            return text
+    return ""
+
+
+class WacliAdapter:
+    def __init__(self, account="", store_dir=""):
+        self.account = str(account or "").strip()
+        self.store_dir = str(store_dir or "").strip()
+
+    def _base_command(self):
+        cmd = ["wacli"]
+        if self.account:
+            cmd.extend(["--account", self.account])
+        elif self.store_dir:
+            cmd.extend(["--store", self.store_dir])
+        return cmd
+
+    def _env(self):
+        env = os.environ.copy()
+        env["WACLI_READONLY"] = "1"
+        if self.store_dir:
+            env["WACLI_STORE_DIR"] = self.store_dir
+        return env
+
+    def doctor(self):
+        if not shutil.which("wacli"):
+            raise RuntimeError("wacli binary not found on PATH")
+        result = subprocess.run(
+            self._base_command() + ["doctor", "--json"],
+            capture_output=True,
+            text=True,
+            env=self._env(),
+        )
+        if result.returncode != 0:
+            error_text = result.stderr.strip() or result.stdout.strip() or "wacli doctor failed"
+            raise RuntimeError(error_text)
+        try:
+            payload = json.loads(result.stdout or "{}")
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"invalid JSON from wacli doctor: {exc}") from exc
+        if not self.store_dir:
+            self.store_dir = extract_wacli_store_dir(payload) or self.store_dir or default_wacli_store_dir()
+        return payload
+
+    def database_path(self):
+        store_dir = self.store_dir or default_wacli_store_dir()
+        return os.path.join(store_dir, "wacli.db")
+
+    def fetch_messages(self, min_rowid, since_timestamp, limit=500):
+        db_path = self.database_path()
+        if not os.path.exists(db_path):
+            raise RuntimeError(f"wacli store not found at {db_path}")
+        query = """
+            SELECT
+                m.rowid,
+                m.chat_jid,
+                COALESCE(m.chat_name, c.name, '') AS chat_name,
+                m.msg_id,
+                m.sender_jid,
+                COALESCE(m.sender_name, '') AS sender_name,
+                m.ts,
+                COALESCE(m.display_text, m.text, '') AS text,
+                COALESCE(m.media_caption, '') AS media_caption,
+                COALESCE(m.media_type, '') AS media_type,
+                COALESCE(m.from_me, 0) AS from_me
+            FROM messages m
+            LEFT JOIN chats c ON c.jid = m.chat_jid
+            WHERE m.revoked = 0
+              AND m.deleted_for_me = 0
+              AND m.rowid > ?
+              AND m.ts >= ?
+            ORDER BY m.rowid ASC
+            LIMIT ?
+        """
+        conn = None
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(query, (int(min_rowid), int(since_timestamp), int(limit))).fetchall()
+        except sqlite3.Error as exc:
+            raise RuntimeError(f"failed to read wacli.db: {exc}") from exc
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        return [dict(row) for row in rows]
 
 
 def extract_message_text(payload):
@@ -468,6 +657,8 @@ def summarize_activity_event(event, matched_names):
         summary = f"Calendar event logged: {title}."
     elif source_type == "drive":
         summary = f"CRM-labeled Drive document reviewed: {title}."
+    elif source_type == "whatsapp":
+        summary = f"WhatsApp conversation update captured about {title}."
     elif direction == "outbound":
         summary = f"John sent a Gmail update about {title}."
     elif direction == "inbound":
@@ -756,11 +947,62 @@ class EventNormalizer:
             "raw_payload_ref": str(file_item.get("id") or ""),
         }
 
+    @staticmethod
+    def normalize_whatsapp_message(message, account_name=""):
+        ts = int(message.get("ts") or 0)
+        event_time = datetime.fromtimestamp(ts, UTC).isoformat() if ts else datetime.now(UTC).isoformat()
+        chat_jid = str(message.get("chat_jid") or "").strip().lower()
+        sender_jid = str(message.get("sender_jid") or chat_jid).strip().lower()
+        from_me = bool(message.get("from_me"))
+        chat_name = str(message.get("chat_name") or "").strip()
+        sender_name = str(message.get("sender_name") or "").strip()
+        text = summarize_text("\n".join(part for part in [message.get("text"), message.get("media_caption")] if str(part or "").strip()), 4000)
+        phone = phone_from_jid(sender_jid if not from_me else chat_jid)
+        participant_name = sender_name or chat_name or phone or sender_jid
+        participants = [
+            {
+                "email": "",
+                "name": participant_name,
+                "role": "sender" if not from_me else "chat",
+                "phone": phone,
+                "jid": sender_jid if not from_me else chat_jid,
+                "is_self": from_me and not is_whatsapp_group_jid(chat_jid),
+            }
+        ]
+        thread_id = f"whatsapp:{account_name}:{chat_jid}" if account_name else f"whatsapp:{chat_jid}"
+        title_parts = [part for part in [chat_name, sender_name] if part]
+        if not title_parts:
+            title_parts.append(phone or chat_jid or "WhatsApp chat")
+        subject = " / ".join(title_parts[:2])
+        return {
+            "source_type": "whatsapp",
+            "source_id": f"{chat_jid}:{message.get('msg_id')}",
+            "source_link": "",
+            "thread_id": thread_id,
+            "event_time": event_time,
+            "direction": "outbound" if from_me else "inbound",
+            "participants": participants,
+            "subject_or_title": f"WhatsApp: {subject}",
+            "body_text": text,
+            "snippet": summarize_text(text, 160),
+            "attachment_names": [str(message.get("media_type") or "").strip()] if str(message.get("media_type") or "").strip() else [],
+            "references": "",
+            "in_reply_to": "",
+            "raw_payload_ref": str(message.get("msg_id") or ""),
+            "chat_jid": chat_jid,
+            "sender_jid": sender_jid,
+            "whatsapp_rowid": int(message.get("rowid") or 0),
+            "whatsapp_account": account_name,
+            "chat_kind": "group" if is_whatsapp_group_jid(chat_jid) else "channel" if is_whatsapp_channel_jid(chat_jid) else "direct",
+        }
+
 
 class CRMIndex:
     def __init__(self):
         self.contacts_by_email = {}
+        self.contacts_by_phone = {}
         self.leads_by_email = {}
+        self.leads_by_phone = {}
         self.company_contexts_by_domain = {}
         self.company_contexts = []
         self.opportunities = []
@@ -853,9 +1095,13 @@ def get_crm_index():
             if directory == "Contacts":
                 for email in parse_email_addresses(frontmatter.get("email", "")):
                     index.contacts_by_email[email] = record
+                for phone in extract_phone_numbers(frontmatter.get("mobile", "")) + extract_phone_numbers(frontmatter.get("phone", "")):
+                    index.contacts_by_phone[phone] = record
             elif directory == "Leads":
                 for email in parse_email_addresses(frontmatter.get("email", "")):
                     index.leads_by_email[email] = record
+                for phone in extract_phone_numbers(frontmatter.get("mobile", "")) + extract_phone_numbers(frontmatter.get("phone", "")):
+                    index.leads_by_phone[phone] = record
             elif directory in {"Organizations", "Accounts"}:
                 context = build_company_context(directory[:-1].lower(), record, frontmatter)
                 index.company_contexts.append(context)
@@ -922,15 +1168,26 @@ class EntityResolver:
             return "generic"
         return "professional"
 
+    def classify_participant(self, participant):
+        email = str(participant.get("email") or "").lower().strip()
+        if email:
+            return self.classify_email(email)
+        if participant.get("is_self"):
+            return "self"
+        if participant.get("phone") or participant.get("jid"):
+            return "professional"
+        return "invalid"
+
     def resolve_participant(self, participant):
-        email = participant["email"].lower()
-        email_class = self.classify_email(email)
+        email = str(participant.get("email") or "").lower()
+        phone = normalize_phone_number(participant.get("phone") or phone_from_jid(participant.get("jid", "")))
+        email_class = self.classify_participant(participant)
         if email_class in {"invalid", "self"}:
             return {"status": "ignore", "reason": email_class, "participant": participant}
         if email_class in {"service", "generic"}:
             return {"status": "noise", "reason": email_class, "participant": participant}
 
-        if email in self.index.contacts_by_email:
+        if email and email in self.index.contacts_by_email:
             record = self.index.contacts_by_email[email]
             opps = []
             for variant in link_variants(record["link"]):
@@ -944,12 +1201,37 @@ class EntityResolver:
                 "opportunities": dedupe_records(opps),
             }
 
-        if email in self.index.leads_by_email:
+        if phone and phone in self.index.contacts_by_phone:
+            record = self.index.contacts_by_phone[phone]
+            opps = []
+            for variant in link_variants(record["link"]):
+                opps.extend(self.index.opportunities_by_contact.get(variant, []))
+            return {
+                "status": "matched",
+                "match_type": "contact",
+                "confidence": 0.95,
+                "participant": participant,
+                "record": record,
+                "opportunities": dedupe_records(opps),
+            }
+
+        if email and email in self.index.leads_by_email:
             record = self.index.leads_by_email[email]
             return {
                 "status": "matched",
                 "match_type": "lead",
                 "confidence": 1.0,
+                "participant": participant,
+                "record": record,
+                "opportunities": [],
+            }
+
+        if phone and phone in self.index.leads_by_phone:
+            record = self.index.leads_by_phone[phone]
+            return {
+                "status": "matched",
+                "match_type": "lead",
+                "confidence": 0.95,
                 "participant": participant,
                 "record": record,
                 "opportunities": [],
@@ -1598,6 +1880,8 @@ def build_activity_frontmatter(event, primary_anchor, secondary_links, note_link
         activity_type = "meeting"
     elif source_type == "drive":
         activity_type = "meeting" if re.search(r"\b(meeting|call|sync|catch up|checkpoint|debrief|board)\b", title, re.I) else "analysis"
+    elif source_type == "whatsapp":
+        activity_type = "note-derived"
     else:
         activity_type = "email"
     if source_type == "drive":
@@ -2439,6 +2723,147 @@ def process_granola_post_ingest(args, crm_index, state):
     return granola_updates, True
 
 
+def process_whatsapp_post_ingest(
+    args,
+    crm_index,
+    state,
+    resolver,
+    inferrer,
+    task_analyzer,
+    meeting_notes_resolver,
+    activity_updates,
+    contact_discoveries,
+    lead_decisions,
+    opportunity_suggestions,
+    task_suggestions,
+    noise_review,
+    audit_log,
+    interactions,
+):
+    whatsapp_updates = []
+    if args.skip_whatsapp or not whatsapp_post_ingest_enabled():
+        return whatsapp_updates, False
+
+    now = datetime.now(UTC).replace(microsecond=0)
+    if args.since:
+        since_date = args.since
+        since_dt = datetime.fromisoformat(f"{args.since}T00:00:00+00:00")
+        start_rowid = 0
+    else:
+        checkpoint = str(state.get("whatsapp_last_sync_at") or "").strip()
+        since_date = checkpoint[:10] if checkpoint else (now.date() - timedelta(days=whatsapp_initial_lookback_days())).strftime("%Y-%m-%d")
+        since_dt = datetime.fromisoformat(f"{since_date}T00:00:00+00:00")
+        start_rowid = int(state.get("whatsapp_last_rowid") or 0)
+
+    adapter = WacliAdapter(account=whatsapp_account_name(), store_dir=whatsapp_store_dir())
+    try:
+        doctor = adapter.doctor()
+    except Exception as exc:
+        whatsapp_updates.append({"status": "unavailable", "reason": str(exc), "since_date": since_date})
+        save_json(WHATSAPP_UPDATES_PATH, whatsapp_updates)
+        return whatsapp_updates, False
+
+    last_rowid = start_rowid
+    rows = []
+    try:
+        while True:
+            batch = adapter.fetch_messages(last_rowid, int(since_dt.timestamp()), limit=500)
+            if not batch:
+                break
+            rows.extend(batch)
+            last_rowid = max(last_rowid, int(batch[-1].get("rowid") or 0))
+            if len(batch) < 500:
+                break
+    except Exception as exc:
+        whatsapp_updates.append({"status": "error", "reason": str(exc), "since_date": since_date})
+        save_json(WHATSAPP_UPDATES_PATH, whatsapp_updates)
+        return whatsapp_updates, False
+
+    thread_history = {}
+    for row in rows:
+        event = EventNormalizer.normalize_whatsapp_message(row, adapter.account)
+        history = thread_history.setdefault(event["thread_id"], [])
+        event["_thread_context"] = build_thread_context(history) if history else {}
+        before_counts = (
+            len(activity_updates),
+            len(contact_discoveries),
+            len(lead_decisions),
+            len(opportunity_suggestions),
+            len(task_suggestions),
+        )
+        process_ingest_event(
+            event,
+            args,
+            crm_index,
+            resolver,
+            inferrer,
+            task_analyzer,
+            meeting_notes_resolver,
+            activity_updates,
+            contact_discoveries,
+            lead_decisions,
+            opportunity_suggestions,
+            task_suggestions,
+            noise_review,
+            audit_log,
+            interactions,
+        )
+        history.append(
+            {
+                "subject_or_title": event.get("subject_or_title", ""),
+                "body_text": event.get("body_text", ""),
+                "snippet": event.get("snippet", ""),
+                "direction": event.get("direction", ""),
+                "attachment_names": list(event.get("attachment_names", []) or []),
+            }
+        )
+        after_counts = (
+            len(activity_updates),
+            len(contact_discoveries),
+            len(lead_decisions),
+            len(opportunity_suggestions),
+            len(task_suggestions),
+        )
+        deltas = [after - before for before, after in zip(before_counts, after_counts)]
+        status = "reviewed_no_change"
+        if any(delta > 0 for delta in deltas):
+            status = "staged_or_written"
+        whatsapp_updates.append(
+            {
+                "rowid": int(row.get("rowid") or 0),
+                "chat_jid": str(row.get("chat_jid") or ""),
+                "msg_id": str(row.get("msg_id") or ""),
+                "event_time": event["event_time"],
+                "title": event["subject_or_title"],
+                "status": status,
+                "changes": {
+                    "activity_updates": deltas[0],
+                    "contact_discoveries": deltas[1],
+                    "lead_decisions": deltas[2],
+                    "opportunity_suggestions": deltas[3],
+                    "task_suggestions": deltas[4],
+                },
+            }
+        )
+
+    state["whatsapp_last_sync_at"] = now.isoformat().replace("+00:00", "Z")
+    state["whatsapp_last_rowid"] = last_rowid
+    save_json(
+        WHATSAPP_UPDATES_PATH,
+        {
+            "status": "ok",
+            "since_date": since_date,
+            "account": adapter.account,
+            "store_dir": adapter.store_dir,
+            "doctor": doctor,
+            "messages_scanned": len(rows),
+            "last_rowid": last_rowid,
+            "updates": whatsapp_updates,
+        },
+    )
+    return whatsapp_updates, True
+
+
 def anchor_context_type(primary_anchor):
     if not primary_anchor:
         return ""
@@ -2453,7 +2878,7 @@ def is_relationship_relevant(event, resolutions):
 
 
 def classify_unknown_participant(event, participant, anchor, anchor_resolutions, crm_index):
-    domain = domain_from_email(participant["email"])
+    domain = domain_from_email(participant.get("email", ""))
     anchor_type = anchor_context_type(anchor)
     anchor_links = []
     if anchor:
@@ -2481,16 +2906,19 @@ def classify_unknown_participant(event, participant, anchor, anchor_resolutions,
 
 
 def build_contact_discovery(event, participant, action_type, anchor):
+    participant_identity = interaction_identity(participant)
     payload = {
-        "proposal_group_id": proposal_group_id(event, participant["email"]),
+        "proposal_group_id": proposal_group_id(event, participant_identity),
         "source_event_id": event["source_id"],
         "source_type": event["source_type"],
         "source_link": event["source_link"],
         "event_time": event["event_time"],
         "action_type": action_type,
-        "proposed_contact_name": participant.get("name") or participant["email"],
-        "email": participant["email"],
-        "inferred_company_context": domain_from_email(participant["email"]),
+        "proposed_contact_name": participant.get("name") or participant_identity,
+        "email": participant.get("email", ""),
+        "phone": normalize_phone_number(participant.get("phone", "")),
+        "participant_identity": participant_identity,
+        "inferred_company_context": domain_from_email(participant.get("email", "")),
         "linked_anchor": anchor["record"]["link"] if anchor else "",
         "rationale": "",
         "ambiguity_flags": [],
@@ -2508,15 +2936,18 @@ def build_contact_discovery(event, participant, action_type, anchor):
 
 
 def build_lead_decision(event, participant, decision_type, suggested_status="", conversion_mode="undetermined", anchor=""):
+    participant_identity = interaction_identity(participant)
     payload = {
-        "proposal_group_id": proposal_group_id(event, participant["email"]),
+        "proposal_group_id": proposal_group_id(event, participant_identity),
         "source_event_id": event["source_id"],
         "source_type": event["source_type"],
         "source_link": event["source_link"],
         "event_time": event["event_time"],
         "decision_type": decision_type,
-        "participant_email": participant["email"],
-        "participant_name": participant.get("name") or participant["email"],
+        "participant_email": participant.get("email", ""),
+        "participant_phone": normalize_phone_number(participant.get("phone", "")),
+        "participant_identity": participant_identity,
+        "participant_name": participant.get("name") or participant_identity,
         "anchor": anchor,
         "source_event_summary": summarize_text(event.get("body_text") or event.get("snippet", ""), 260),
         "meeting_notes_summary": NotesAnalyzer.get_note_summary(event),
@@ -2684,8 +3115,8 @@ def legacy_discovery(contact_discoveries, lead_decisions, noise_review):
 def external_participants(event, resolver):
     result = []
     for participant in event["participants"]:
-        email = participant.get("email", "").lower()
-        if not email or resolver.classify_email(email) == "self":
+        identity = str(participant.get("email") or participant.get("phone") or participant.get("jid") or "").lower()
+        if not identity or resolver.classify_participant(participant) == "self":
             continue
         result.append(participant)
     return result
@@ -2698,12 +3129,225 @@ def likely_calendar_relevant(event, resolutions):
     return len(attendees) >= 2
 
 
+def likely_whatsapp_relevant(event, resolutions):
+    if event.get("chat_kind") == "channel":
+        return False
+    if any(resolution["status"] == "matched" for resolution in resolutions):
+        return True
+    if event.get("chat_kind") == "group":
+        return False
+    text = "\n".join(
+        [
+            str(event.get("subject_or_title", "")),
+            str(event.get("body_text", "")),
+            str(event.get("snippet", "")),
+        ]
+    )
+    if professional_signal_count(text) >= 2:
+        return True
+    if professional_signal_count(text) >= 1 and TaskAnalyzer.extract_action_items(text):
+        return True
+    return False
+
+
+def should_stage_whatsapp_unknown_participant(event, primary_anchor, signals, participant):
+    if event.get("source_type") != "whatsapp":
+        return True
+    if event.get("chat_kind") == "group":
+        return bool(primary_anchor)
+    if primary_anchor:
+        return True
+    if participant.get("is_self"):
+        return False
+    # For direct chats without an existing CRM anchor, require clear business evidence.
+    if "commercial_intent" not in signals:
+        return False
+    if "commitment_detected" not in signals and "logistics_detected" not in signals:
+        return False
+    return professional_signal_count(event.get("body_text", "") or event.get("snippet", "")) >= 2
+
+
+def interaction_identity(participant):
+    return str(participant.get("email") or participant.get("phone") or participant.get("jid") or "").lower().strip()
+
+
+def record_interaction(interactions, identity, event_date):
+    if not identity:
+        return
+    item = interactions.setdefault(identity, {"last_date": event_date, "hits_last_7_days": 0})
+    if event_date > item.get("last_date", ""):
+        item["last_date"] = event_date
+    if event_date >= (date.today() - timedelta(days=7)).strftime("%Y-%m-%d"):
+        item["hits_last_7_days"] = int(item.get("hits_last_7_days", 0)) + 1
+
+
+def process_ingest_event(
+    event,
+    args,
+    crm_index,
+    resolver,
+    inferrer,
+    task_analyzer,
+    meeting_notes_resolver,
+    activity_updates,
+    contact_discoveries,
+    lead_decisions,
+    opportunity_suggestions,
+    task_suggestions,
+    noise_review,
+    audit_log,
+    interactions,
+):
+    audit_log["scanned"] += 1
+    for participant in event["participants"]:
+        record_interaction(interactions, interaction_identity(participant), event["event_time"][:10])
+
+    participants = external_participants(event, resolver)
+    resolutions = [resolver.resolve_participant(participant) for participant in participants]
+
+    if event["source_type"] == "calendar" and not likely_calendar_relevant(event, resolutions):
+        audit_log["ignored"] += 1
+        audit_log["actions"].append({"source_id": event["source_id"], "result": "ignored_calendar_noise"})
+        return
+
+    if event["source_type"] == "whatsapp" and not likely_whatsapp_relevant(event, resolutions):
+        audit_log["ignored"] += 1
+        audit_log["actions"].append({"source_id": event["source_id"], "result": "ignored_whatsapp_noise"})
+        return
+
+    primary_anchor = choose_primary_anchor(event, resolutions, crm_index)
+    secondary_links = build_secondary_links(primary_anchor, resolutions)
+    event["_notes_context"] = meeting_notes_resolver.resolve_for_event(event, primary_anchor, secondary_links)
+    combined_text = NotesAnalyzer.combined_event_text(event)
+    signals = inferrer.infer_signals(combined_text, event.get("subject_or_title", ""), event.get("source_type", "gmail"))
+    if NotesAnalyzer.get_note_links(event):
+        signals.append("meeting_notes_detected")
+    if event["_notes_context"].get("looked_up"):
+        signals.append("drive_notes_lookup_attempted")
+
+    if primary_anchor:
+        activity_update = {
+            "proposal_group_id": proposal_group_id(event, "activity"),
+            "source_event_id": event["source_id"],
+            "source_type": event["source_type"],
+            "source_link": event["source_link"],
+            "event_time": event["event_time"],
+            "write_policy_tier": 1,
+            "dedupe_result": "not_checked",
+            "reason": "Matched known relationship context.",
+            "primary_parent": primary_anchor["record"]["link"],
+            "primary_parent_type": primary_anchor["type"],
+            "secondary_links": secondary_links,
+            "signals": signals,
+            "meeting_notes_summary": NotesAnalyzer.get_note_summary(event),
+        }
+        if args.autonomous or args.auto_tier >= 1:
+            write_result = maybe_write_activity(event, primary_anchor, secondary_links, crm_index, resolutions)
+            if write_result["duplicate"]:
+                audit_log["actions"].append({"source_id": event["source_id"], "result": "duplicate_activity_skipped"})
+            else:
+                activity_update["status"] = "auto_written"
+                activity_update["dedupe_result"] = "written"
+                activity_update["target_record_path"] = write_result["record"]["rel_path"]
+                activity_updates.append(activity_update)
+        else:
+            activity_update["status"] = "pending_review"
+            activity_update["dedupe_result"] = "not_written"
+            activity_updates.append(activity_update)
+
+    matched_tasks = task_analyzer.find_matching_tasks(set(link_variants(primary_anchor["record"]["link"])) if primary_anchor else set())
+    for task in matched_tasks:
+        completion_conf = task_analyzer.completion_confidence_for_task(event, task)
+        if completion_conf < 0.65:
+            continue
+        task_suggestions.append(
+            build_task_suggestion(
+                event,
+                primary_anchor["record"]["link"] if primary_anchor else "",
+                "task_completion_suggestion",
+                summarize_text(event.get("body_text") or event.get("snippet", ""), 200),
+                matched_task=task,
+                confidence=completion_conf,
+            )
+        )
+
+    if primary_anchor:
+        for item in task_analyzer.extract_action_items(combined_text):
+            task_type = "committed_action" if task_analyzer.looks_owner_assigned(item) else "suggested_follow_up"
+            task_suggestions.append(build_task_suggestion(event, primary_anchor["record"]["link"] if primary_anchor else "", task_type, item))
+
+    for resolution in resolutions:
+        participant = resolution["participant"]
+        if resolution["status"] == "noise":
+            if professional_signal_count(event.get("subject_or_title", "")) > 0:
+                noise_review.append(
+                    {
+                        "source_id": event["source_id"],
+                        "source_link": event["source_link"],
+                        "email": participant.get("email", ""),
+                        "reason": resolution["reason"],
+                    }
+                )
+            else:
+                audit_log["ignored"] += 1
+            continue
+
+        if resolution["status"] == "unknown":
+            if not should_stage_whatsapp_unknown_participant(event, primary_anchor, signals, participant):
+                audit_log["actions"].append(
+                    {
+                        "source_id": event["source_id"],
+                        "participant": interaction_identity(participant),
+                        "result": "ignored_whatsapp_unknown",
+                    }
+                )
+                continue
+            action_type = classify_unknown_participant(event, participant, primary_anchor, resolutions, crm_index)
+            normalized_action = action_type
+            if action_type == "create_lead":
+                normalized_action = "new_lead_candidate"
+                lead_decisions.append(build_lead_decision(event, participant, "create_lead", anchor=primary_anchor["record"]["link"] if primary_anchor else ""))
+            elif action_type == "new_contact_for_existing_lead_context":
+                contact_discoveries.append(build_contact_discovery(event, participant, "attach_contact_to_existing_relationship", primary_anchor))
+            elif action_type == "attach_contact_to_existing_relationship":
+                contact_discoveries.append(build_contact_discovery(event, participant, action_type, primary_anchor))
+            elif action_type == "create_contact_and_flag_secondary_lead":
+                contact_discoveries.append(build_contact_discovery(event, participant, action_type, primary_anchor))
+                lead_decisions.append(build_lead_decision(event, participant, "create_lead", anchor=primary_anchor["record"]["link"] if primary_anchor else ""))
+            audit_log["actions"].append({"source_id": event["source_id"], "participant": interaction_identity(participant), "result": normalized_action})
+            continue
+
+        if resolution["status"] != "matched":
+            continue
+
+        if resolution["match_type"] == "lead":
+            lead_record = resolution["record"]
+            current_status = str(lead_record["frontmatter"].get("status", "")).lower()
+            if any(signal in signals for signal in ["meeting_detected", "logistics_detected", "introduction_detected", "commitment_detected"]) and current_status == "new":
+                decision = build_lead_decision(event, participant, "suggest_status_change", suggested_status="engaged", anchor=lead_record["link"])
+                decision["current_status"] = current_status
+                decision["reason"] = "Real interaction detected with existing lead."
+                lead_decisions.append(decision)
+            if "commercial_intent" in signals and current_status in {"engaged", "prospect", "new"}:
+                target_status = "qualified"
+                decision = build_lead_decision(event, participant, "suggest_status_change", suggested_status=target_status, anchor=lead_record["link"])
+                decision["current_status"] = current_status
+                decision["reason"] = "Commercial intent detected around existing lead."
+                lead_decisions.append(decision)
+            if "commercial_intent" in signals and current_status == "qualified":
+                decision = build_lead_decision(event, participant, "suggest_conversion", conversion_mode="commercial", anchor=lead_record["link"])
+                decision["reason"] = "Qualified lead now shows explicit commercial workstream formation."
+                lead_decisions.append(decision)
+                opportunity_suggestions.append(build_opportunity_suggestion(event, lead_record, "lead"))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--since")
     parser.add_argument("--autonomous", action="store_true")
     parser.add_argument("--auto-tier", type=int, default=0)
     parser.add_argument("--skip-granola", action="store_true")
+    parser.add_argument("--skip-whatsapp", action="store_true")
     args = parser.parse_args()
 
     ensure_dirs()
@@ -2737,144 +3381,6 @@ def main():
     drive_document_updates = []
     audit_log = {"scanned": 0, "ignored": 0, "actions": []}
 
-    def record_interaction(email, event_date):
-        if not email:
-            return
-        item = interactions.setdefault(email.lower(), {"last_date": event_date, "hits_last_7_days": 0})
-        if event_date > item.get("last_date", ""):
-            item["last_date"] = event_date
-        if event_date >= (date.today() - timedelta(days=7)).strftime("%Y-%m-%d"):
-            item["hits_last_7_days"] = int(item.get("hits_last_7_days", 0)) + 1
-
-    def process_event(event):
-        audit_log["scanned"] += 1
-        for participant in event["participants"]:
-            record_interaction(participant.get("email", "").lower(), event["event_time"][:10])
-
-        participants = external_participants(event, resolver)
-        resolutions = [resolver.resolve_participant(participant) for participant in participants]
-
-        if event["source_type"] == "calendar" and not likely_calendar_relevant(event, resolutions):
-            audit_log["ignored"] += 1
-            audit_log["actions"].append({"source_id": event["source_id"], "result": "ignored_calendar_noise"})
-            return
-
-        primary_anchor = choose_primary_anchor(event, resolutions, crm_index)
-        secondary_links = build_secondary_links(primary_anchor, resolutions)
-        event["_notes_context"] = meeting_notes_resolver.resolve_for_event(event, primary_anchor, secondary_links)
-        combined_text = NotesAnalyzer.combined_event_text(event)
-        signals = inferrer.infer_signals(combined_text, event.get("subject_or_title", ""), event.get("source_type", "gmail"))
-        if NotesAnalyzer.get_note_links(event):
-            signals.append("meeting_notes_detected")
-        if event["_notes_context"].get("looked_up"):
-            signals.append("drive_notes_lookup_attempted")
-
-        if primary_anchor:
-            activity_update = {
-                "proposal_group_id": proposal_group_id(event, "activity"),
-                "source_event_id": event["source_id"],
-                "source_type": event["source_type"],
-                "source_link": event["source_link"],
-                "event_time": event["event_time"],
-                "write_policy_tier": 1,
-                "dedupe_result": "not_checked",
-                "reason": "Matched known relationship context.",
-                "primary_parent": primary_anchor["record"]["link"],
-                "primary_parent_type": primary_anchor["type"],
-                "secondary_links": secondary_links,
-                "signals": signals,
-                "meeting_notes_summary": NotesAnalyzer.get_note_summary(event),
-            }
-            if args.autonomous or args.auto_tier >= 1:
-                write_result = maybe_write_activity(event, primary_anchor, secondary_links, crm_index, resolutions)
-                if write_result["duplicate"]:
-                    audit_log["actions"].append({"source_id": event["source_id"], "result": "duplicate_activity_skipped"})
-                else:
-                    activity_update["status"] = "auto_written"
-                    activity_update["dedupe_result"] = "written"
-                    activity_update["target_record_path"] = write_result["record"]["rel_path"]
-                    activity_updates.append(activity_update)
-            else:
-                activity_update["status"] = "pending_review"
-                activity_update["dedupe_result"] = "not_written"
-                activity_updates.append(activity_update)
-
-        matched_tasks = task_analyzer.find_matching_tasks(set(link_variants(primary_anchor["record"]["link"])) if primary_anchor else set())
-        for task in matched_tasks:
-            completion_conf = task_analyzer.completion_confidence_for_task(event, task)
-            if completion_conf < 0.65:
-                continue
-            task_suggestions.append(
-                build_task_suggestion(
-                    event,
-                    primary_anchor["record"]["link"] if primary_anchor else "",
-                    "task_completion_suggestion",
-                    summarize_text(event.get("body_text") or event.get("snippet", ""), 200),
-                    matched_task=task,
-                    confidence=completion_conf,
-                )
-            )
-
-        if primary_anchor:
-            for item in task_analyzer.extract_action_items(combined_text):
-                task_type = "committed_action" if task_analyzer.looks_owner_assigned(item) else "suggested_follow_up"
-                task_suggestions.append(build_task_suggestion(event, primary_anchor["record"]["link"] if primary_anchor else "", task_type, item))
-
-        for resolution in resolutions:
-            participant = resolution["participant"]
-            if resolution["status"] == "noise":
-                if professional_signal_count(event.get("subject_or_title", "")) > 0:
-                    noise_review.append(
-                        {
-                            "source_id": event["source_id"],
-                            "source_link": event["source_link"],
-                            "email": participant["email"],
-                            "reason": resolution["reason"],
-                        }
-                    )
-                else:
-                    audit_log["ignored"] += 1
-                continue
-
-            if resolution["status"] == "unknown":
-                action_type = classify_unknown_participant(event, participant, primary_anchor, resolutions, crm_index)
-                normalized_action = action_type
-                if action_type == "create_lead":
-                    normalized_action = "new_lead_candidate"
-                    lead_decisions.append(build_lead_decision(event, participant, "create_lead", anchor=primary_anchor["record"]["link"] if primary_anchor else ""))
-                elif action_type == "new_contact_for_existing_lead_context":
-                    contact_discoveries.append(build_contact_discovery(event, participant, "attach_contact_to_existing_relationship", primary_anchor))
-                elif action_type == "attach_contact_to_existing_relationship":
-                    contact_discoveries.append(build_contact_discovery(event, participant, action_type, primary_anchor))
-                elif action_type == "create_contact_and_flag_secondary_lead":
-                    contact_discoveries.append(build_contact_discovery(event, participant, action_type, primary_anchor))
-                    lead_decisions.append(build_lead_decision(event, participant, "create_lead", anchor=primary_anchor["record"]["link"] if primary_anchor else ""))
-                audit_log["actions"].append({"source_id": event["source_id"], "participant": participant["email"], "result": normalized_action})
-                continue
-
-            if resolution["status"] != "matched":
-                continue
-
-            if resolution["match_type"] == "lead":
-                lead_record = resolution["record"]
-                current_status = str(lead_record["frontmatter"].get("status", "")).lower()
-                if any(signal in signals for signal in ["meeting_detected", "logistics_detected", "introduction_detected", "commitment_detected"]) and current_status == "new":
-                    decision = build_lead_decision(event, participant, "suggest_status_change", suggested_status="engaged", anchor=lead_record["link"])
-                    decision["current_status"] = current_status
-                    decision["reason"] = "Real interaction detected with existing lead."
-                    lead_decisions.append(decision)
-                if "commercial_intent" in signals and current_status in {"engaged", "prospect", "new"}:
-                    target_status = "qualified"
-                    decision = build_lead_decision(event, participant, "suggest_status_change", suggested_status=target_status, anchor=lead_record["link"])
-                    decision["current_status"] = current_status
-                    decision["reason"] = "Commercial intent detected around existing lead."
-                    lead_decisions.append(decision)
-                if "commercial_intent" in signals and current_status == "qualified":
-                    decision = build_lead_decision(event, participant, "suggest_conversion", conversion_mode="commercial", anchor=lead_record["link"])
-                    decision["reason"] = "Qualified lead now shows explicit commercial workstream formation."
-                    lead_decisions.append(decision)
-                    opportunity_suggestions.append(build_opportunity_suggestion(event, lead_record, "lead"))
-
     gmail_events = [EventNormalizer.normalize_gmail(message) for message in harvester.get_gmail_messages()]
     gmail_events.sort(key=lambda item: sort_timestamp(item.get("event_time", "")))
     thread_history = {}
@@ -2882,7 +3388,23 @@ def main():
         thread_id = str(event.get("thread_id") or "")
         history = thread_history.setdefault(thread_id, []) if thread_id else []
         event["_thread_context"] = build_thread_context(history) if history else {}
-        process_event(event)
+        process_ingest_event(
+            event,
+            args,
+            crm_index,
+            resolver,
+            inferrer,
+            task_analyzer,
+            meeting_notes_resolver,
+            activity_updates,
+            contact_discoveries,
+            lead_decisions,
+            opportunity_suggestions,
+            task_suggestions,
+            noise_review,
+            audit_log,
+            interactions,
+        )
         if thread_id:
             history.append(
                 {
@@ -2897,7 +3419,23 @@ def main():
     for calendar_event in harvester.get_calendar_events():
         event = EventNormalizer.normalize_calendar(calendar_event)
         event["_thread_context"] = {}
-        process_event(event)
+        process_ingest_event(
+            event,
+            args,
+            crm_index,
+            resolver,
+            inferrer,
+            task_analyzer,
+            meeting_notes_resolver,
+            activity_updates,
+            contact_discoveries,
+            lead_decisions,
+            opportunity_suggestions,
+            task_suggestions,
+            noise_review,
+            audit_log,
+            interactions,
+        )
 
     try:
         calendar_cache_start = now - timedelta(days=1)
@@ -3008,6 +3546,30 @@ def main():
             }
         )
 
+    granola_updates, granola_ran = process_granola_post_ingest(args, crm_index, state)
+    if not granola_ran and not os.path.exists(GRANOLA_UPDATES_PATH):
+        save_json(GRANOLA_UPDATES_PATH, [])
+
+    whatsapp_updates, whatsapp_ran = process_whatsapp_post_ingest(
+        args,
+        crm_index,
+        state,
+        resolver,
+        inferrer,
+        task_analyzer,
+        meeting_notes_resolver,
+        activity_updates,
+        contact_discoveries,
+        lead_decisions,
+        opportunity_suggestions,
+        task_suggestions,
+        noise_review,
+        audit_log,
+        interactions,
+    )
+    if not whatsapp_ran and not os.path.exists(WHATSAPP_UPDATES_PATH):
+        save_json(WHATSAPP_UPDATES_PATH, [])
+
     activity_updates = sort_activity_updates(activity_updates)
     contact_discoveries = sort_contact_discoveries(contact_discoveries)
     lead_decisions = sort_lead_decisions(lead_decisions)
@@ -3027,10 +3589,6 @@ def main():
     save_json(LEGACY_WORKSPACE_UPDATES_PATH, legacy_workspace_updates(activity_updates, task_suggestions, lead_decisions, opportunity_suggestions))
     save_json(LEGACY_DISCOVERY_PATH, legacy_discovery(contact_discoveries, lead_decisions, noise_review))
 
-    granola_updates, granola_ran = process_granola_post_ingest(args, crm_index, state)
-    if not granola_ran and not os.path.exists(GRANOLA_UPDATES_PATH):
-        save_json(GRANOLA_UPDATES_PATH, [])
-
     state["gmail_last_sync_at"] = now.isoformat().replace("+00:00", "Z")
     state["calendar_last_sync_at"] = now.isoformat().replace("+00:00", "Z")
     save_json(SYNC_STATE_PATH, state)
@@ -3046,6 +3604,7 @@ def main():
                 "task_suggestions": len(task_suggestions),
                 "noise_review": len(noise_review),
                 "granola_updates": len(granola_updates),
+                "whatsapp_updates": len(whatsapp_updates),
                 "status": "staged",
             },
             indent=2,

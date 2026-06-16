@@ -23,7 +23,7 @@ This skill must stay aligned with the lead lifecycle defined in [`crm-lead-manag
 The current script exists and is usable:
 
 ```bash
-python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py [--since YYYY-MM-DD] [--auto-tier N] [--skip-granola]
+python3 .gemini/skills/crm-ingest-gws/scripts/ingest.py [--since YYYY-MM-DD] [--auto-tier N] [--skip-granola] [--skip-whatsapp]
 ```
 
 Codex desktop execution note: this script calls `gws`, which must reach Gmail, Calendar, Docs, and Drive APIs. In the restricted Codex sandbox this commonly fails with DNS / host-resolution errors before ingest starts. For the recurring CRM daily automation, run it through the approved unrestricted command path:
@@ -77,6 +77,7 @@ Core pipeline:
 Current extension:
 - an end-of-run Drive pass may also review CRM-labeled Google Docs after the main Gmail / Calendar flow
 - an end-of-run Granola pass may also review recent Granola meetings and write deduped Activities / Tasks when Granola MCP is available through local Codex
+- an end-of-run WhatsApp pass may also review local `wacli` message history when `whatsapp_post_ingest_enabled` is configured in CRM settings
 
 ### 2. Use contextual inference, not flat discovery
 
@@ -203,6 +204,7 @@ Optional:
 - `staging/noise_review.json` for borderline filtered items
 - `staging/drive_document_updates.json` for the post-ingest CRM-labeled Google Docs pass
 - `staging/granola_updates.json` for the post-ingest Granola pass
+- `staging/whatsapp_updates.json` for the post-ingest WhatsApp pass
 
 Review in this order:
 1. `activity_updates.json`
@@ -212,6 +214,7 @@ Review in this order:
 5. `task_suggestions.json`
 6. `drive_document_updates.json` when present
 7. `granola_updates.json` when present
+8. `whatsapp_updates.json` when present
 
 Why:
 - first confirm what happened

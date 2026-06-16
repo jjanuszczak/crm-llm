@@ -35,7 +35,7 @@ Then internalize these current repo realities before making changes:
 - `Deal-Flow/` is still the live deal inventory path
 - `waiting` is a first-class task state and should be treated as reminder-driven review, not execution failure
 - a startup may legitimately appear in both `Deal-Flow/` and `Opportunities/`, but those records serve different purposes
-- Workspace ingest now has additive Google Drive and optional Granola post-passes after the main Gmail / Calendar flow
+- Workspace ingest now has additive Google Drive plus optional Granola and WhatsApp post-passes after the main Gmail / Calendar flow
 
 ## Core Mental Model
 
@@ -209,7 +209,7 @@ The preferred top-level abstraction for this is the `crm-daily-processing` skill
 Current day-to-day pattern:
 1. Read `DASHBOARD.md`, `index.md`, and `log.md`
 2. Run Workspace ingest
-3. Review Drive / Granola ingest outputs and apply obvious low-ambiguity changes
+3. Review Drive / Granola / WhatsApp ingest outputs and apply obvious low-ambiguity changes
 4. Ask the user for off-system updates from WhatsApp, calls, in-person meetings, and already-sent emails
 5. Reconcile `todo`, `waiting`, and stale tasks
 6. Update opportunities, leads, deals, and activities
@@ -227,7 +227,7 @@ The home view is relationship-first, not timeline-first.
 
 ## Workspace Sync Rules
 
-Workspace sync currently starts with Gmail and Calendar, then may extend into Google Drive and Granola after the main event pass.
+Workspace sync currently starts with Gmail and Calendar, then may extend into Google Drive, Granola, and WhatsApp after the main event pass.
 
 Critical rules:
 - always read Gmail body content or Calendar event details before creating an `Activity`
@@ -235,8 +235,8 @@ Critical rules:
 - persist checkpoint state in `crm-data/staging/workspace_sync_state.json`
 - if `--since` is omitted, resume from checkpoint
 - if `--since YYYY-MM-DD` is passed, treat that as an explicit backfill window
-- preserve ordering: Gmail / Calendar first, then broad note lookup, then CRM-labeled Drive docs, then optional Granola enrichment
-- Granola is optional and must fail open; ingest should still succeed without it
+- preserve ordering: Gmail / Calendar first, then broad note lookup, then CRM-labeled Drive docs, then optional Granola enrichment, then optional WhatsApp enrichment
+- Granola and WhatsApp are optional and must fail open; ingest should still succeed without them
 
 Current ingest realities worth knowing before changing the pipeline:
 - task detection is now thread-aware for Gmail and uses attachment / prior-thread context for better completion and follow-up inference
@@ -244,11 +244,15 @@ Current ingest realities worth knowing before changing the pipeline:
 - meeting-note discovery is still event-centric first; CRM-labeled Drive docs are only an additive catch-up pass
 - Granola post-ingest currently runs through local `codex exec` plus Granola MCP, not a Python-native Granola API client
 - Granola-derived Activities and Tasks dedupe by durable `source-ref` provenance
+- WhatsApp post-ingest currently reads local `wacli` state in read-only mode using its `doctor --json` probe and SQLite message store
+- WhatsApp checkpointing currently uses both `whatsapp_last_sync_at` and `whatsapp_last_rowid`
+- the WhatsApp pass is intentionally conservative: unanchored group chatter is ignored by default and unanchored direct chats require strong business signal before staging anything
 
 Useful ingest flags:
 - `--since YYYY-MM-DD`
 - `--auto-tier N`
 - `--skip-granola`
+- `--skip-whatsapp`
 
 Important staging files:
 - `crm-data/staging/activity_updates.json`
@@ -262,6 +266,7 @@ Important staging files:
 - `crm-data/staging/interactions.json`
 - `crm-data/staging/drive_document_updates.json`
 - `crm-data/staging/granola_updates.json`
+- `crm-data/staging/whatsapp_updates.json`
 - `crm-data/staging/workspace_sync_state.json`
 - `crm-data/staging/matches.json`
 
@@ -269,6 +274,10 @@ Important settings currently recognized by ingest:
 - `crm-data/settings.json` -> `crm_drive_label_ids`
 - `crm-data/settings.json` -> `granola_post_ingest_enabled`
 - `crm-data/settings.json` -> `granola_post_ingest_lookback_days`
+- `crm-data/settings.json` -> `whatsapp_post_ingest_enabled`
+- `crm-data/settings.json` -> `whatsapp_post_ingest_lookback_days`
+- `crm-data/settings.json` -> `whatsapp_account`
+- `crm-data/settings.json` -> `whatsapp_store_dir`
 
 ## File Creation Rules
 
@@ -357,7 +366,7 @@ When reviewing PRs or script changes:
 
 ### Workspace sync
 - `.gemini/skills/crm-ingest-gws/scripts/ingest.py`
-- the same script also orchestrates the post-ingest CRM-labeled Drive and Granola passes
+- the same script also orchestrates the post-ingest CRM-labeled Drive, Granola, and WhatsApp passes
 
 ### Recent migration helpers
 - `scripts/migrate_accounts_to_organizations.py`
@@ -427,6 +436,8 @@ For structural work:
 - some skill docs may lag the latest schema cleanup and should be updated when touched
 - Granola post-ingest depends on a working local Codex CLI session with Granola MCP configured
 - the Granola pass is intentionally conservative about anchoring; unanchored meetings are skipped rather than guessed
+- WhatsApp post-ingest depends on a working local `wacli` installation and readable local store state
+- the WhatsApp pass is intentionally conservative and should be treated as staged evidence, not broad auto-capture
 
 ## Bottom Line
 

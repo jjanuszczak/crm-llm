@@ -335,9 +335,11 @@ WhatsApp is not required for baseline CRM operation. If you want the automatic p
 
 Practical notes:
 - the current implementation reads local `wacli` state in read-only mode
+- on the first WhatsApp run without a saved checkpoint, ingest scans the full local `wacli` history instead of only a short recent window
 - if `wacli` is unavailable or its store cannot be read, ingest should still complete normally
 - WhatsApp results are staged in `crm-data/staging/whatsapp_updates.json`
 - the current policy is intentionally conservative: unanchored WhatsApp groups are ignored by default, and unanchored direct chats require strong business signal before staging anything
+- for direct chats, ingest now also allows conservative exact-name soft matching against a unique CRM Contact or Lead and uses recent thread context to interpret short acknowledgements
 
 ## Naming Conventions
 

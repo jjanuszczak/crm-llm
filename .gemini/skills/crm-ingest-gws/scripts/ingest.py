@@ -344,6 +344,11 @@ def parse_email_addresses(value):
     return [match.lower() for match in matches]
 
 
+def normalize_person_name(value):
+    text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+    return re.sub(r"\s+", " ", text)
+
+
 def normalize_phone_number(value):
     digits = re.sub(r"\D+", "", str(value or ""))
     if not digits:
@@ -748,6 +753,19 @@ def build_thread_context(history):
     }
 
 
+def whatsapp_thread_context_text(event):
+    if event.get("source_type") != "whatsapp":
+        return ""
+    context = event.get("_thread_context") or {}
+    parts = [
+        str(context.get("prior_subjects", "")).strip(),
+        str(context.get("prior_outbound_text", "")).strip(),
+        str(context.get("prior_inbound_text", "")).strip(),
+        " ".join(context.get("prior_attachment_names", []) or []).strip(),
+    ]
+    return "\n\n".join(part for part in parts if part).strip()
+
+
 class SourceHarvester:
     def __init__(self, since_dt):
         self.since_dt = since_dt
@@ -959,6 +977,7 @@ class EventNormalizer:
         text = summarize_text("\n".join(part for part in [message.get("text"), message.get("media_caption")] if str(part or "").strip()), 4000)
         phone = phone_from_jid(sender_jid if not from_me else chat_jid)
         participant_name = sender_name or chat_name or phone or sender_jid
+        chat_kind = "group" if is_whatsapp_group_jid(chat_jid) else "channel" if is_whatsapp_channel_jid(chat_jid) else "direct"
         participants = [
             {
                 "email": "",
@@ -967,6 +986,8 @@ class EventNormalizer:
                 "phone": phone,
                 "jid": sender_jid if not from_me else chat_jid,
                 "is_self": from_me and not is_whatsapp_group_jid(chat_jid),
+                "source_type": "whatsapp",
+                "chat_kind": chat_kind,
             }
         ]
         thread_id = f"whatsapp:{account_name}:{chat_jid}" if account_name else f"whatsapp:{chat_jid}"
@@ -993,7 +1014,7 @@ class EventNormalizer:
             "sender_jid": sender_jid,
             "whatsapp_rowid": int(message.get("rowid") or 0),
             "whatsapp_account": account_name,
-            "chat_kind": "group" if is_whatsapp_group_jid(chat_jid) else "channel" if is_whatsapp_channel_jid(chat_jid) else "direct",
+            "chat_kind": chat_kind,
         }
 
 
@@ -1001,8 +1022,10 @@ class CRMIndex:
     def __init__(self):
         self.contacts_by_email = {}
         self.contacts_by_phone = {}
+        self.contacts_by_name = {}
         self.leads_by_email = {}
         self.leads_by_phone = {}
+        self.leads_by_name = {}
         self.company_contexts_by_domain = {}
         self.company_contexts = []
         self.opportunities = []
@@ -1097,11 +1120,19 @@ def get_crm_index():
                     index.contacts_by_email[email] = record
                 for phone in extract_phone_numbers(frontmatter.get("mobile", "")) + extract_phone_numbers(frontmatter.get("phone", "")):
                     index.contacts_by_phone[phone] = record
+                for candidate_name in [frontmatter.get("full-name", ""), frontmatter.get("nickname", ""), record["name"]]:
+                    normalized_name = normalize_person_name(candidate_name)
+                    if normalized_name:
+                        index.contacts_by_name.setdefault(normalized_name, []).append(record)
             elif directory == "Leads":
                 for email in parse_email_addresses(frontmatter.get("email", "")):
                     index.leads_by_email[email] = record
                 for phone in extract_phone_numbers(frontmatter.get("mobile", "")) + extract_phone_numbers(frontmatter.get("phone", "")):
                     index.leads_by_phone[phone] = record
+                for candidate_name in [frontmatter.get("person-name", ""), frontmatter.get("lead-name", ""), record["name"]]:
+                    normalized_name = normalize_person_name(candidate_name)
+                    if normalized_name:
+                        index.leads_by_name.setdefault(normalized_name, []).append(record)
             elif directory in {"Organizations", "Accounts"}:
                 context = build_company_context(directory[:-1].lower(), record, frontmatter)
                 index.company_contexts.append(context)
@@ -1236,6 +1267,35 @@ class EntityResolver:
                 "record": record,
                 "opportunities": [],
             }
+
+        if participant.get("source_type") == "whatsapp" and participant.get("chat_kind") == "direct":
+            name = normalize_person_name(participant.get("name", ""))
+            if len(name.split()) >= 2:
+                contact_matches = dedupe_records(self.index.contacts_by_name.get(name, []))
+                if len(contact_matches) == 1:
+                    record = contact_matches[0]
+                    opps = []
+                    for variant in link_variants(record["link"]):
+                        opps.extend(self.index.opportunities_by_contact.get(variant, []))
+                    return {
+                        "status": "matched",
+                        "match_type": "contact",
+                        "confidence": 0.7,
+                        "participant": participant,
+                        "record": record,
+                        "opportunities": dedupe_records(opps),
+                    }
+
+                lead_matches = dedupe_records(self.index.leads_by_name.get(name, []))
+                if len(lead_matches) == 1:
+                    return {
+                        "status": "matched",
+                        "match_type": "lead",
+                        "confidence": 0.65,
+                        "participant": participant,
+                        "record": lead_matches[0],
+                        "opportunities": [],
+                    }
 
         domain = domain_from_email(email)
         contexts = self.index.company_contexts_by_domain.get(domain, [])
@@ -2749,11 +2809,19 @@ def process_whatsapp_post_ingest(
         since_date = args.since
         since_dt = datetime.fromisoformat(f"{args.since}T00:00:00+00:00")
         start_rowid = 0
+        bootstrap_full_history = False
     else:
         checkpoint = str(state.get("whatsapp_last_sync_at") or "").strip()
-        since_date = checkpoint[:10] if checkpoint else (now.date() - timedelta(days=whatsapp_initial_lookback_days())).strftime("%Y-%m-%d")
-        since_dt = datetime.fromisoformat(f"{since_date}T00:00:00+00:00")
-        start_rowid = int(state.get("whatsapp_last_rowid") or 0)
+        if checkpoint:
+            since_date = checkpoint[:10]
+            since_dt = datetime.fromisoformat(f"{since_date}T00:00:00+00:00")
+            start_rowid = int(state.get("whatsapp_last_rowid") or 0)
+            bootstrap_full_history = False
+        else:
+            since_date = "1970-01-01"
+            since_dt = datetime.fromtimestamp(0, UTC)
+            start_rowid = 0
+            bootstrap_full_history = True
 
     adapter = WacliAdapter(account=whatsapp_account_name(), store_dir=whatsapp_store_dir())
     try:
@@ -2853,6 +2921,7 @@ def process_whatsapp_post_ingest(
         {
             "status": "ok",
             "since_date": since_date,
+            "bootstrap_full_history": bootstrap_full_history,
             "account": adapter.account,
             "store_dir": adapter.store_dir,
             "doctor": doctor,
@@ -3141,6 +3210,7 @@ def likely_whatsapp_relevant(event, resolutions):
             str(event.get("subject_or_title", "")),
             str(event.get("body_text", "")),
             str(event.get("snippet", "")),
+            whatsapp_thread_context_text(event),
         ]
     )
     if professional_signal_count(text) >= 2:
@@ -3219,6 +3289,9 @@ def process_ingest_event(
     secondary_links = build_secondary_links(primary_anchor, resolutions)
     event["_notes_context"] = meeting_notes_resolver.resolve_for_event(event, primary_anchor, secondary_links)
     combined_text = NotesAnalyzer.combined_event_text(event)
+    thread_context = whatsapp_thread_context_text(event)
+    if thread_context:
+        combined_text = f"{combined_text}\n\nThread context:\n{thread_context}".strip()
     signals = inferrer.infer_signals(combined_text, event.get("subject_or_title", ""), event.get("source_type", "gmail"))
     if NotesAnalyzer.get_note_links(event):
         signals.append("meeting_notes_detected")

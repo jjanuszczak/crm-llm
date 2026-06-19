@@ -47,6 +47,36 @@ class WhatsappIngestTests(unittest.TestCase):
         self.assertEqual(result["match_type"], "contact")
         self.assertEqual(result["record"]["name"], "Jane Doe")
 
+    def test_entity_resolver_soft_matches_unique_whatsapp_direct_chat_by_name(self):
+        index = ingest.CRMIndex()
+        contact = {
+            "type": "Contact",
+            "file_path": "/tmp/contact.md",
+            "rel_path": "Contacts/paolo-picazo.md",
+            "link": "[[Contacts/paolo-picazo]]",
+            "frontmatter": {"full-name": "Paolo Picazo"},
+            "body": "",
+            "name": "Paolo Picazo",
+        }
+        index.contacts_by_name["paolo picazo"] = [contact]
+        resolver = ingest.EntityResolver(index, set(), set(), [])
+
+        result = resolver.resolve_participant(
+            {
+                "email": "",
+                "name": "Paolo Picazo",
+                "phone": "",
+                "jid": "85290881000@s.whatsapp.net",
+                "role": "chat",
+                "source_type": "whatsapp",
+                "chat_kind": "direct",
+            }
+        )
+
+        self.assertEqual(result["status"], "matched")
+        self.assertEqual(result["match_type"], "contact")
+        self.assertEqual(result["record"]["name"], "Paolo Picazo")
+
     def test_process_whatsapp_post_ingest_fails_open_when_wacli_unavailable(self):
         args = types.SimpleNamespace(since=None, skip_whatsapp=False, autonomous=False, auto_tier=0)
         state = {}
@@ -90,6 +120,7 @@ class WhatsappIngestTests(unittest.TestCase):
         args = types.SimpleNamespace(since=None, skip_whatsapp=False, autonomous=False, auto_tier=0)
         state = {}
         captured_events = []
+        fetch_calls = []
 
         class FakeAdapter:
             def __init__(self, account="", store_dir=""):
@@ -100,6 +131,7 @@ class WhatsappIngestTests(unittest.TestCase):
                 return {"store": {"path": self.store_dir}}
 
             def fetch_messages(self, min_rowid, since_timestamp, limit=500):
+                fetch_calls.append((min_rowid, since_timestamp, limit))
                 if min_rowid > 0:
                     return []
                 return [
@@ -156,6 +188,9 @@ class WhatsappIngestTests(unittest.TestCase):
         self.assertEqual(len(captured_events), 1)
         self.assertEqual(captured_events[0]["source_type"], "whatsapp")
         self.assertIn('"messages_scanned": 1', updates_text)
+        self.assertEqual(fetch_calls[0][0], 0)
+        self.assertEqual(fetch_calls[0][1], 0)
+        self.assertIn('"bootstrap_full_history": true', updates_text)
         self.assertEqual(updates[0]["status"], "staged_or_written")
 
 

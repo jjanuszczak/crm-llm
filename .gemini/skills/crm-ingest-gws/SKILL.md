@@ -77,7 +77,7 @@ Core pipeline:
 Current extension:
 - an end-of-run Drive pass may also review CRM-labeled Google Docs after the main Gmail / Calendar flow
 - an end-of-run Granola pass may also review recent Granola meetings and write deduped Activities / Tasks when Granola MCP is available through local Codex
-- an end-of-run WhatsApp pass may also review local `wacli` message history when `whatsapp_post_ingest_enabled` is configured in CRM settings
+- an end-of-run WhatsApp pass may also run a bounded `wacli sync --once` and then review local message history when `whatsapp_post_ingest_enabled` is configured in CRM settings
 
 ### 2. Use contextual inference, not flat discovery
 
@@ -205,6 +205,10 @@ Optional:
 - `staging/drive_document_updates.json` for the post-ingest CRM-labeled Google Docs pass
 - `staging/granola_updates.json` for the post-ingest Granola pass
 - `staging/whatsapp_updates.json` for the post-ingest WhatsApp pass
+
+The WhatsApp pass refreshes the local archive before reading it. Sync is bounded and fail-open: authentication, network, and store-lock failures are recorded under `sync` in `whatsapp_updates.json`, and ingest continues against any readable existing archive. Once a rowid checkpoint exists, rowid is the durable cursor so delayed messages added after an outage are still considered even when their WhatsApp timestamps are older than the latest CRM run.
+
+The sync uses `whatsapp_sync_max_db_size` from `settings.json` as a safety ceiling (default `500MB`). Rolling retention is controlled by `whatsapp_archive_max_messages` (default `5000`; `0` disables pruning). After CRM processing succeeds, the pass deletes the oldest SQLite message rows by WhatsApp timestamp until only the newest configured count remains. The CRM checkpoint retains the highest processed rowid, and SQLite AUTOINCREMENT prevents deleted rowids from being reused. Retention results are recorded under `retention` in `whatsapp_updates.json`.
 
 Review in this order:
 1. `activity_updates.json`

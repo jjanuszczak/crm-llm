@@ -49,7 +49,9 @@ Then adopt these current assumptions:
 
 Use this distinction:
 - `Deal`: a company / startup in inventory that can be matched to investors
-- `Opportunity`: a potential paid mandate, advisory engagement, or other commercial path for John
+- `Opportunity`: the pre-close commercial pursuit
+- `Engagement`: the post-close commercial and execution container
+- `Workstream`: a specific execution lane inside an engagement
 
 ## Mental Model
 
@@ -79,8 +81,14 @@ The system currently uses this memory model. The key record types are:
 - `Lead`: pre-conversion relationship record
 - `Contact`: person record
 - `Account`: commercial relationship record
-- `Opportunity`: active engagement or commercial path
+- `Opportunity`: pre-close commercial path
+- `Engagement`: post-close commercially won work
+- `Workstream`: execution lane within an engagement
 - `Deal`: startup/inventory seeking capital
+- `Source Artifact`: canonical pointer to external evidence or working documents
+- `Retainer`: recurring commercial commitment under an engagement
+- `Invoice`: billed obligation tied to an engagement
+- `Payment`: received payment tied to an invoice
 - `Note`: durable context and strategic memory
 - `Activity`: real interaction or event
 - `Task`: explicit next action
@@ -93,10 +101,12 @@ Important current rules:
 - `Organization` owns stable identity/classification, while `Account` owns the active commercial relationship.
 - Investor mandate and check-size stay on the organization side; fundraising stage and target raise stay on `Deal`.
 - `commercial-value` is canonical on Opportunities; `deal-value` is compatibility-only.
+- closed-won opportunities should usually hand off into an `Engagement`.
+- every `Workstream` must belong to exactly one `Engagement`.
 - The default home view is relationship-first, not chronology-first.
 - `Deal` and `Opportunity` are intentionally separate:
   - use `Deal` for investor-shop inventory
-  - use `Opportunity` for John's possible or active mandate with that company
+  - use `Opportunity` for John's possible mandate with that company
 
 ## Quick Start
 
@@ -172,6 +182,32 @@ Create or review an Opportunity workflow:
 python3 scripts/opportunity_manager.py review "Opportunities/Example"
 ```
 
+Mark an opportunity won and create the post-close handoff:
+
+```bash
+python3 scripts/opportunity_manager.py mark-won "Opportunities/Example" --create-engagement --engagement-type advisory --commercial-model retainer --create-workstream --workstream-type research
+```
+
+Review or add post-close execution structure directly:
+
+```bash
+python3 scripts/engagement_manager.py review "Engagements/Example"
+python3 scripts/engagement_manager.py create-workstream --engagement "Engagements/Example" --workstream-type research --name "Market Validation Track"
+```
+
+Create finance records for active delivery:
+
+```bash
+python3 scripts/finance_manager.py create-retainer --engagement "Engagements/Example" --amount 5000 --currency USD --cadence monthly
+python3 scripts/finance_manager.py create-invoice --engagement "Engagements/Example" --workstream "Workstreams/Example" --amount 2500 --currency USD --due-date 2026-07-15
+```
+
+Create a source artifact tied to a workstream or engagement:
+
+```bash
+python3 scripts/source_artifact_manager.py create --primary-parent-type workstream --primary-parent "Workstreams/Example" --source-system google-drive --source-type doc --url "https://docs.google.com/..."
+```
+
 Rebuild the CRM index manually:
 
 ```bash
@@ -238,7 +274,7 @@ That workflow should:
 - review staged suggestions
 - ask the user for off-system updates from WhatsApp, in-person meetings, calls, and other uncaptured channels
 - reconcile `todo`, `waiting`, and stale tasks
-- review live opportunities and leads
+- review live opportunities, engagements, workstreams, and leads
 - refresh the dashboard and derived views
 
 At a lower level, the manual sequence is:
@@ -249,7 +285,7 @@ At a lower level, the manual sequence is:
 4. Review `crm-data/staging/opportunity_suggestions.json` and `crm-data/staging/task_suggestions.json`.
 5. Review `crm-data/staging/drive_document_updates.json` and `crm-data/staging/granola_updates.json` when present.
 6. Process or create `Inbox/` items into durable records.
-7. Create or update `Leads`, `Activities`, `Notes`, and `Tasks` as needed.
+7. Create or update `Leads`, `Activities`, `Notes`, `Tasks`, `Engagements`, `Workstreams`, and finance records as needed.
 8. Run the dashboard refresh.
 
 If you only do one thing to get oriented in a live vault, read:
@@ -330,12 +366,17 @@ WhatsApp is not required for baseline CRM operation. If you want the automatic p
 - enable it in `crm-data/settings.json` with `whatsapp_post_ingest_enabled`
 - optionally set:
   - `whatsapp_post_ingest_lookback_days`
+  - `whatsapp_sync_max_db_size` (default `500MB`; safety ceiling for the SQLite archive)
+  - `whatsapp_archive_max_messages` (default `5000`; retains the newest X messages after CRM processing, or `0` to disable pruning)
   - `whatsapp_account`
   - `whatsapp_store_dir`
 
 Practical notes:
-- the current implementation reads local `wacli` state in read-only mode
+- the current implementation first runs a bounded `wacli sync --once`, then reads the local SQLite archive in read-only mode
+- sync failures caused by missing authentication, connectivity, or a held store lock are recorded in `whatsapp_updates.json`; the pass fails open and reads any existing archive it can access
 - on the first WhatsApp run without a saved checkpoint, ingest scans the full local `wacli` history instead of only a short recent window
+- after checkpointing begins, the SQLite rowid is the durable cursor so messages added late after a sync outage are not excluded by older WhatsApp timestamps
+- after CRM processing succeeds, rolling retention keeps only the newest `whatsapp_archive_max_messages` rows by WhatsApp timestamp; pruning results are recorded in staging
 - if `wacli` is unavailable or its store cannot be read, ingest should still complete normally
 - WhatsApp results are staged in `crm-data/staging/whatsapp_updates.json`
 - the current policy is intentionally conservative: unanchored WhatsApp groups are ignored by default, and unanchored direct chats require strong business signal before staging anything
@@ -379,7 +420,7 @@ Google Tasks operating rule:
 - do not assume Google-native personal tasks belong in the CRM unless an explicit intake workflow is added later
 
 Preferred current write surface:
-- use the manager CLIs for `Organization`, `Account`, `Contact`, `Deal`, `Task`, `Lead`, and `Opportunity` lifecycle work
+- use the manager CLIs for `Organization`, `Account`, `Contact`, `Deal`, `Task`, `Lead`, `Opportunity`, `Engagement`, finance, and source-artifact lifecycle work
 - use `record_manager.py` for first-class `Activity` and `Note` creation
 - use `inbox_manager.py` for raw capture processing
 
@@ -392,16 +433,25 @@ The most relevant skills for real use are:
 - `update-dashboard`
 - `crm-lead-manager`
 - `crm-opportunity-manager`
+- `crm-engagement-manager`
+- `crm-finance-manager`
+- `crm-source-artifact-manager`
 - `crm-create-account`
 - `crm-create-contact`
 - `crm-create-deal`
 - `crm-create-daily-report`
 - `crm-create-organization`
+- `crm-create-engagement`
 - `crm-create-lead`
 - `crm-create-inbox-item`
+- `crm-create-invoice`
 - `crm-create-note`
 - `crm-create-activity`
+- `crm-create-payment`
+- `crm-create-retainer`
+- `crm-create-source-artifact`
 - `crm-create-task`
+- `crm-create-workstream`
 - `matchmaker`
 - `manage-intelligence`
 
@@ -417,6 +467,9 @@ Skill definitions live in `.gemini/skills/*/SKILL.md`.
 - [deal_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/deal_manager.py#L1): deal inventory creation and update
 - [lead_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-lead-manager/scripts/lead_manager.py#L1): lead lifecycle and conversion
 - [opportunity_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-opportunity-manager/scripts/opportunity_manager.py#L1): opportunity lifecycle and execution workflows
+- [engagement_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-engagement-manager/scripts/engagement_manager.py#L1): engagement lifecycle and workstream workflows
+- [finance_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-finance-manager/scripts/finance_manager.py#L1): retainers, invoices, payments, and finance review
+- [source_artifact_manager.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-source-artifact-manager/scripts/source_artifact_manager.py#L1): source artifact creation, linking, and Readwise import
 - [task_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/task_manager.py#L1): task creation, update, and status management
 - [sync-tasks.py](/Users/johnjanuszczak/Projects/crm-logic/.gemini/skills/crm-sync-google-tasks/scripts/sync-tasks.py#L1): CRM-to-Google Tasks sync using persisted Google task identifiers
 - [inbox_manager.py](/Users/johnjanuszczak/Projects/crm-logic/scripts/inbox_manager.py#L1): Inbox creation and processing

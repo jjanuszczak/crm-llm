@@ -2,7 +2,7 @@
 
 **Status:** Current
 
-This document defines the intended relationship journey from raw lead through closed opportunity. It complements `docs/schema-spec.md`, which remains the canonical field-level schema reference.
+This document defines the intended relationship journey from raw lead through closed opportunity and post-close handoff. It complements `docs/schema-spec.md`, which remains the canonical field-level schema reference.
 
 ## Purpose
 
@@ -27,6 +27,8 @@ Conversion:  qualified Lead -> Organization + Contact + Account + Opportunity
 Opportunity: discovery -> qualified -> proposal -> negotiation -> closed-won
                          \-> paused
                          \-> closed-lost
+
+Post-close:  closed-won Opportunity -> Engagement -> one or more Workstreams
 ```
 
 ## Lead Lifecycle
@@ -99,6 +101,13 @@ Paused opportunities should usually have an open `Task` with:
 
 The opportunity succeeded. `is-active` should be `false`.
 
+A closed-won opportunity should usually hand off into:
+
+- `Engagement`
+- optionally an initial `Workstream`
+
+The opportunity remains durable commercial history. It should not remain the long-term home for post-close execution tracking.
+
 ### `closed-lost`
 
 The opportunity failed, was declined, or is no longer viable. `is-active` should be `false`, and `lost-at-stage`, `lost-reason`, and `lost-date` should be preserved when known.
@@ -149,4 +158,5 @@ This preserves the conversion boundary and makes it clear whether the record is 
 - Use `disqualified` or `closed-lost` only when the relationship or opportunity is actually no longer viable.
 - `waiting` tasks are the reminder mechanism for deferred and paused states.
 - Converted leads should preserve provenance to the records created from them.
-- Active commercial work should center on the `Opportunity`.
+- Pre-close commercial work should center on the `Opportunity`.
+- Post-close execution work should center on the `Engagement`, with concrete delivery lanes represented as `Workstreams`.

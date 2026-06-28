@@ -91,6 +91,26 @@ Proposed sub-workflows:
 - archive stale opportunity
 - spawn follow-up tasks and activities
 
+### 3A. `crm-engagement-manager`
+
+Purpose:
+- manage the full lifecycle of post-close commercially won work
+
+Why top-level:
+- it is the commercial handoff from won opportunity into delivery reality
+- it introduces a new execution container with multiple child workstreams
+- creation, review, pause, completion, and workstream structure require judgment
+
+Proposed sub-workflows:
+- create engagement
+- link source opportunity
+- add workstream
+- re-scope workstream
+- pause engagement
+- complete engagement
+- cancel engagement
+- review engagement health
+
 ### 4. `crm-relationship-review`
 
 Purpose:
@@ -182,6 +202,41 @@ Proposed sub-workflows:
 - inspect telemetry gaps
 - validate surfaced priorities
 
+### 8A. `crm-source-artifact-manager`
+
+Purpose:
+- manage cross-entity references to external artifacts and evidence
+
+Why top-level:
+- external documents and evidence now become a first-class operating layer
+- this workflow spans Drive, Readwise, Granola, notes, engagements, and workstreams
+- duplication, provenance, and confidentiality need consistent judgment
+
+Proposed sub-workflows:
+- create source artifact
+- link source artifact
+- attach summary note
+- review source placement
+- archive or supersede source artifact
+
+### 8B. `crm-finance-manager`
+
+Purpose:
+- manage lightweight post-close commercial tracking
+
+Why top-level:
+- retainers, invoices, and payments become first-class operational records
+- this is a distinct loop from opportunity management
+- post-close commercial visibility needs its own review surface
+
+Proposed sub-workflows:
+- create retainer
+- create invoice
+- record payment
+- set invoice status
+- review outstanding exposure
+- reconcile payment state
+
 ### 9. `crm-matchmaker`
 
 Purpose:
@@ -227,11 +282,17 @@ These are narrower skills that may remain standalone utilities or become sub-wor
 - `crm-create-contact`
 - `crm-create-deal`
 - `crm-create-daily-report`
+- `crm-create-engagement`
+- `crm-create-invoice`
 - `crm-create-opportunity`
+- `crm-create-payment`
 - `crm-create-task`
 - `crm-create-note`
 - `crm-create-lead`
 - `crm-create-organization`
+- `crm-create-retainer`
+- `crm-create-source-artifact`
+- `crm-create-workstream`
 - `crm-create-inbox-item`
 
 Role in the map:
@@ -258,12 +319,15 @@ Role in the map:
 
 ### Commercial Execution Layer
 - `crm-opportunity-manager`
+- `crm-engagement-manager`
+- `crm-finance-manager`
 - `crm-task-manager`
 
 ### Relationship Operations Layer
 - `crm-daily-processing`
 - `crm-relationship-review`
 - `crm-memory-manager`
+- `crm-source-artifact-manager`
 
 ### Strategic / Brokerage Layer
 - `crm-matchmaker`
@@ -316,6 +380,31 @@ Reason:
 - `crm-ingest-gws` and `crm-lead-manager` are already being actively clarified
 - the next major gap is the workflow after conversion, not before it
 - opportunity execution and relationship review are the biggest missing first-class operating skills
+
+## Workflow Placement
+
+The repo should define workflow layers in three places:
+
+1. `.gemini/skills/*/SKILL.md`
+   - user-facing workflow contract
+   - when to use the workflow
+   - review sequence
+   - policy and judgment boundaries
+
+2. `.gemini/skills/<skill>/scripts/` or shared `scripts/`
+   - canonical implementation for the workflow when code exists
+   - manager-style workflows should prefer a skill-owned script when the workflow is large enough to deserve a stable surface
+   - narrower compatibility wrappers may still exist in top-level `scripts/` where needed
+
+3. `docs/schema-spec.md` and `templates/`
+   - canonical record contract
+   - field names, statuses, and path expectations
+   - source of truth before workflow code exists
+
+For this enhancement specifically:
+- workflow definitions are now being added under `.gemini/skills/`
+- schema and templates live in `docs/schema-spec.md` and `templates/`
+- implementation code for these new workflows does not exist yet and will be added later in manager scripts
 
 ## Current Repo Mapping
 

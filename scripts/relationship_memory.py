@@ -30,12 +30,22 @@ ENTITY_DIRS = {
     "Accounts": os.path.join(CRM_DATA_PATH, "Accounts"),
     "Contacts": os.path.join(CRM_DATA_PATH, "Contacts"),
     "Opportunities": os.path.join(CRM_DATA_PATH, "Opportunities"),
+    "Engagements": os.path.join(CRM_DATA_PATH, "Engagements"),
+    "Workstreams": os.path.join(CRM_DATA_PATH, "Workstreams"),
+    "Source-Artifacts": os.path.join(CRM_DATA_PATH, "Source-Artifacts"),
+    "Retainers": os.path.join(CRM_DATA_PATH, "Retainers"),
+    "Invoices": os.path.join(CRM_DATA_PATH, "Invoices"),
+    "Payments": os.path.join(CRM_DATA_PATH, "Payments"),
     "Leads": os.path.join(CRM_DATA_PATH, "Leads"),
 }
 LINKED_DIRS = {
     "Notes": os.path.join(CRM_DATA_PATH, "Notes"),
     "Activities": os.path.join(CRM_DATA_PATH, "Activities"),
     "Tasks": os.path.join(CRM_DATA_PATH, "Tasks"),
+    "Source-Artifacts": os.path.join(CRM_DATA_PATH, "Source-Artifacts"),
+    "Retainers": os.path.join(CRM_DATA_PATH, "Retainers"),
+    "Invoices": os.path.join(CRM_DATA_PATH, "Invoices"),
+    "Payments": os.path.join(CRM_DATA_PATH, "Payments"),
 }
 
 
@@ -112,11 +122,26 @@ def latest_date(records):
     return max(dates) if dates else None
 
 
-def collect_related(entity, notes, activities, tasks):
+def normalize_amount(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.replace(",", ""))
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def collect_related(entity, notes, activities, tasks, source_artifacts, retainers, invoices, payments):
     entity_link = entity["link"]
     related_notes = []
     related_activities = []
     related_tasks = []
+    related_source_artifacts = []
+    related_retainers = []
+    related_invoices = []
+    related_payments = []
 
     for note in notes:
         frontmatter = note["frontmatter"]
@@ -138,20 +163,60 @@ def collect_related(entity, notes, activities, tasks):
             frontmatter.get("account"),
             frontmatter.get("contact"),
             frontmatter.get("opportunity"),
+            frontmatter.get("engagement"),
+            frontmatter.get("workstream"),
             frontmatter.get("lead"),
             frontmatter.get("primary-parent"),
         ]
         if any(link_matches(candidate, entity_link) for candidate in candidates):
             related_tasks.append(task)
 
-    return related_notes, related_activities, related_tasks
+    for record in source_artifacts:
+        frontmatter = record["frontmatter"]
+        if link_matches(frontmatter.get("primary-parent"), entity_link) or any(
+            link_matches(link, entity_link) for link in frontmatter.get("secondary-links", [])
+        ):
+            related_source_artifacts.append(record)
+
+    for record in retainers:
+        if link_matches(record["frontmatter"].get("engagement"), entity_link):
+            related_retainers.append(record)
+
+    for record in invoices:
+        frontmatter = record["frontmatter"]
+        candidates = [
+            frontmatter.get("engagement"),
+            frontmatter.get("workstream"),
+            frontmatter.get("retainer"),
+        ]
+        if any(link_matches(candidate, entity_link) for candidate in candidates):
+            related_invoices.append(record)
+
+    for record in payments:
+        frontmatter = record["frontmatter"]
+        candidates = [
+            frontmatter.get("engagement"),
+            frontmatter.get("invoice"),
+        ]
+        if any(link_matches(candidate, entity_link) for candidate in candidates):
+            related_payments.append(record)
+
+    return related_notes, related_activities, related_tasks, related_source_artifacts, related_retainers, related_invoices, related_payments
 
 
-def build_observed_summary(entity, notes, activities, tasks, interactions_cache):
+def build_observed_summary(entity, notes, activities, tasks, source_artifacts, retainers, invoices, payments, interactions_cache):
     bullets = []
     bullets.append(f"Linked notes: {len(notes)}")
     bullets.append(f"Linked activities: {len(activities)}")
     bullets.append(f"Open tasks: {sum(1 for task in tasks if task['frontmatter'].get('status') in {'todo', 'in-progress'})}")
+    if source_artifacts:
+        bullets.append(f"Linked source artifacts: {len(source_artifacts)}")
+    if retainers:
+        bullets.append(f"Linked retainers: {len(retainers)}")
+    if invoices:
+        bullets.append(f"Linked invoices: {len(invoices)}")
+    if payments:
+        bullets.append(f"Linked payments: {len(payments)}")
 
     latest_activity = latest_date(activities)
     if latest_activity:
@@ -168,12 +233,20 @@ def build_observed_summary(entity, notes, activities, tasks, interactions_cache)
         source_ref = record["frontmatter"].get("source-ref")
         if source_ref and source_ref not in source_refs:
             source_refs.append(source_ref)
+    for record in source_artifacts + invoices + payments:
+        source_ref = record["frontmatter"].get("source-ref")
+        if source_ref and source_ref not in source_refs:
+            source_refs.append(source_ref)
     if source_refs:
         bullets.append("Source refs: " + ", ".join(source_refs[:3]))
+    if invoices or payments:
+        total_invoiced = sum(normalize_amount(record["frontmatter"].get("amount")) for record in invoices if record["frontmatter"].get("status") != "void")
+        total_received = sum(normalize_amount(record["frontmatter"].get("amount")) for record in payments if record["frontmatter"].get("status") in {"received", "reconciled"})
+        bullets.append(f"Finance rollup: invoiced {int(total_invoiced) if total_invoiced.is_integer() else round(total_invoiced, 2)}, received {int(total_received) if total_received.is_integer() else round(total_received, 2)}")
     return bullets
 
 
-def build_inferred_summary(notes, activities, tasks):
+def build_inferred_summary(notes, activities, tasks, source_artifacts, retainers, invoices, payments):
     bullets = []
     today = date.today()
     latest_activity = latest_date(activities)
@@ -200,6 +273,26 @@ def build_inferred_summary(notes, activities, tasks):
         bullets.append("Context is captured primarily in notes rather than event history.")
     elif activities and not notes:
         bullets.append("Interaction history is present, but durable context notes are sparse.")
+    if source_artifacts and not notes:
+        bullets.append("Evidence exists, but durable interpretation notes are still thin.")
+    overdue_invoices = [
+        record
+        for record in invoices
+        if str(record["frontmatter"].get("status", "")).lower() == "overdue"
+        or (
+            str(record["frontmatter"].get("status", "")).lower() in {"issued", "partially-paid"}
+            and isinstance(record["frontmatter"].get("due-date"), date)
+            and record["frontmatter"]["due-date"] < today
+        )
+    ]
+    total_invoiced = sum(normalize_amount(record["frontmatter"].get("amount")) for record in invoices if record["frontmatter"].get("status") != "void")
+    total_received = sum(normalize_amount(record["frontmatter"].get("amount")) for record in payments if record["frontmatter"].get("status") in {"received", "reconciled"})
+    if overdue_invoices:
+        bullets.append(f"Commercial follow-through needs attention with {len(overdue_invoices)} overdue invoice(s).")
+    elif total_invoiced > total_received:
+        bullets.append("Commercial work is partially collected, so receivables still need tracking.")
+    elif retainers and not invoices:
+        bullets.append("A retainer exists without invoice coverage yet.")
     return bullets
 
 
@@ -216,20 +309,43 @@ def entity_display_name(entity_type, frontmatter, basename):
         return frontmatter.get("full-name", basename)
     if entity_type == "Opportunities":
         return frontmatter.get("opportunity-name", basename)
+    if entity_type == "Engagements":
+        return frontmatter.get("engagement-name", basename)
+    if entity_type == "Workstreams":
+        return frontmatter.get("workstream-name", basename)
     if entity_type == "Leads":
         return frontmatter.get("lead-name", basename)
     return basename
 
 
-def build_memory_section(entity_type, records, notes, activities, tasks, interactions_cache):
+def build_memory_section(entity_type, records, notes, activities, tasks, source_artifacts, retainers, invoices, payments, interactions_cache):
     if not records:
         return f"## {entity_type}\n\nNo records found.\n"
 
     lines = [f"## {entity_type}", ""]
     for entity in records:
-        observed = build_observed_summary(entity, *collect_related(entity, notes, activities, tasks), interactions_cache)
-        related_notes, related_activities, related_tasks = collect_related(entity, notes, activities, tasks)
-        inferred = build_inferred_summary(related_notes, related_activities, related_tasks)
+        related = collect_related(entity, notes, activities, tasks, source_artifacts, retainers, invoices, payments)
+        related_notes, related_activities, related_tasks, related_source_artifacts, related_retainers, related_invoices, related_payments = related
+        observed = build_observed_summary(
+            entity,
+            related_notes,
+            related_activities,
+            related_tasks,
+            related_source_artifacts,
+            related_retainers,
+            related_invoices,
+            related_payments,
+            interactions_cache,
+        )
+        inferred = build_inferred_summary(
+            related_notes,
+            related_activities,
+            related_tasks,
+            related_source_artifacts,
+            related_retainers,
+            related_invoices,
+            related_payments,
+        )
         display_name = entity_display_name(entity_type, entity["frontmatter"], entity["basename"])
         lines.append(f"### {entity['link']} {display_name}")
         lines.append("")
@@ -243,6 +359,10 @@ def build_memory_section(entity_type, records, notes, activities, tasks, interac
         lines.append(f"- Notes: {related_links(related_notes)}")
         lines.append(f"- Activities: {related_links(related_activities)}")
         lines.append(f"- Tasks: {related_links(related_tasks)}")
+        lines.append(f"- Source Artifacts: {related_links(related_source_artifacts)}")
+        lines.append(f"- Retainers: {related_links(related_retainers)}")
+        lines.append(f"- Invoices: {related_links(related_invoices)}")
+        lines.append(f"- Payments: {related_links(related_payments)}")
         lines.append("")
     return "\n".join(lines)
 
@@ -252,6 +372,10 @@ def main():
     notes = collect_records(LINKED_DIRS["Notes"])
     activities = collect_records(LINKED_DIRS["Activities"])
     tasks = collect_records(LINKED_DIRS["Tasks"])
+    source_artifacts = collect_records(LINKED_DIRS["Source-Artifacts"])
+    retainers = collect_records(LINKED_DIRS["Retainers"])
+    invoices = collect_records(LINKED_DIRS["Invoices"])
+    payments = collect_records(LINKED_DIRS["Payments"])
 
     sections = [
         "# Relationship Memory",
@@ -264,7 +388,7 @@ def main():
 
     for entity_type, directory in ENTITY_DIRS.items():
         records = collect_records(directory)
-        sections.append(build_memory_section(entity_type, records, notes, activities, tasks, interactions_cache))
+        sections.append(build_memory_section(entity_type, records, notes, activities, tasks, source_artifacts, retainers, invoices, payments, interactions_cache))
         sections.append("")
 
     with open(RELATIONSHIP_MEMORY_PATH, "w", encoding="utf-8") as handle:

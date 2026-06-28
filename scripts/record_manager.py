@@ -18,7 +18,7 @@ from navigation_manager import record_mutation
 LOGIC_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 NOTE_TEMPLATE_PATH = os.path.join(LOGIC_ROOT, "templates", "note-template.md")
 ACTIVITY_TEMPLATE_PATH = os.path.join(LOGIC_ROOT, "templates", "activity-template.md")
-VALID_PARENT_TYPES = {"lead", "contact", "account", "opportunity", "deal", "activity"}
+VALID_PARENT_TYPES = {"lead", "contact", "account", "opportunity", "engagement", "workstream", "deal", "activity", "source-artifact"}
 VALID_ACTIVITY_TYPES = {"call", "email", "meeting", "analysis", "note-derived"}
 VALID_ACTIVITY_STATUSES = {"completed", "scheduled", "cancelled"}
 
@@ -70,9 +70,13 @@ def create_note(args):
             "note-id": note_id,
             "Note Title": args.title,
             "Owner": args.owner,
-            "lead | contact | account | opportunity | deal | activity": args.primary_parent_type,
+            "lead | contact | account | opportunity | engagement | workstream | deal | activity | source-artifact": args.primary_parent_type,
             "Primary Parent": args.primary_parent,
             "Secondary Link 1": args.secondary_links[0] if args.secondary_links else args.primary_parent,
+            "delivery-insight | research | sales-intelligence | decision | retrospective | brand-seed | general": args.note_type,
+            "internal-only | client-confidential | reusable-anonymized | public-safe": args.reuse_classification,
+            "Evidence Link 1": args.evidence_links[0] if args.evidence_links else args.primary_parent,
+            "Derived From": args.derived_from or "",
             "manual | inbox | gmail | calendar | ai-generated": args.source,
             "Source Reference": args.source_ref or "",
             "YYYY-MM-DD": today,
@@ -80,6 +84,11 @@ def create_note(args):
     )
     frontmatter, body = parse_markdown_frontmatter(rendered)
     frontmatter["secondary-links"] = parse_secondary_links(args.secondary_links)
+    frontmatter["evidence-links"] = parse_secondary_links(args.evidence_links)
+    if args.derived_from:
+        frontmatter["derived-from"] = args.derived_from if args.derived_from.startswith("[[") else f"[[{args.derived_from}]]"
+    else:
+        frontmatter["derived-from"] = ""
     body = body.replace("{{Durable background, interpretation, research, or strategic memory.}}", args.context or "")
     body = body.replace("{{Implication 1}}", args.implication_1 or "")
     body = body.replace("{{Implication 2}}", args.implication_2 or "")
@@ -122,7 +131,7 @@ def create_activity(args):
             "call | email | meeting | analysis | note-derived": args.activity_type,
             "Owner": args.owner,
             "YYYY-MM-DD": activity_date,
-            "opportunity | contact | account | lead | deal": args.primary_parent_type,
+            "opportunity | engagement | workstream | contact | account | lead | deal": args.primary_parent_type,
             "Primary Parent": args.primary_parent,
             "Secondary Link 1": args.secondary_links[0] if args.secondary_links else args.primary_parent,
             "manual | gmail | calendar | inbox": args.source,
@@ -163,6 +172,10 @@ def build_parser():
     note_parser.add_argument("--primary-parent-type", required=True)
     note_parser.add_argument("--primary-parent", required=True)
     note_parser.add_argument("--secondary-links", nargs="*", default=[])
+    note_parser.add_argument("--evidence-links", nargs="*", default=[])
+    note_parser.add_argument("--note-type", default="general")
+    note_parser.add_argument("--reuse-classification", default="internal-only")
+    note_parser.add_argument("--derived-from")
     note_parser.add_argument("--source", default="manual")
     note_parser.add_argument("--source-ref")
     note_parser.add_argument("--context")

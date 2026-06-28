@@ -37,6 +37,12 @@ DIRECTORIES = {
     "Accounts": os.path.join(PROJECT_ROOT, "Accounts"),
     "Contacts": os.path.join(PROJECT_ROOT, "Contacts"),
     "Opportunities": os.path.join(PROJECT_ROOT, "Opportunities"),
+    "Engagements": os.path.join(PROJECT_ROOT, "Engagements"),
+    "Workstreams": os.path.join(PROJECT_ROOT, "Workstreams"),
+    "Source-Artifacts": os.path.join(PROJECT_ROOT, "Source-Artifacts"),
+    "Retainers": os.path.join(PROJECT_ROOT, "Retainers"),
+    "Invoices": os.path.join(PROJECT_ROOT, "Invoices"),
+    "Payments": os.path.join(PROJECT_ROOT, "Payments"),
     "Leads": os.path.join(PROJECT_ROOT, "Leads"),
     "Tasks": os.path.join(PROJECT_ROOT, "Tasks"),
     "Activities": os.path.join(PROJECT_ROOT, "Activities"),
@@ -119,6 +125,18 @@ def as_int(value, default=0):
     return default
 
 
+def as_float(value, default=0.0):
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        match = re.search(r"-?\d+(?:\.\d+)?", value.replace(",", ""))
+        if match:
+            return float(match.group(0))
+    return default
+
+
 def as_list(value):
     if isinstance(value, list):
         return value
@@ -136,6 +154,10 @@ def entity_name(entity_type, frontmatter, basename):
         return frontmatter.get("full-name") or frontmatter.get("full--name") or basename
     if entity_type == "Opportunities":
         return frontmatter.get("opportunity-name", basename)
+    if entity_type == "Engagements":
+        return frontmatter.get("engagement-name", basename)
+    if entity_type == "Workstreams":
+        return frontmatter.get("workstream-name", basename)
     if entity_type == "Leads":
         return frontmatter.get("lead-name", basename)
     if entity_type == "Tasks":
@@ -209,7 +231,7 @@ def latest_record_date(records, keys, include_future=True):
 def related_task_links(task):
     fm = task["frontmatter"]
     links = set()
-    for key in ["primary-parent", "account", "contact", "opportunity", "lead"]:
+    for key in ["primary-parent", "account", "contact", "opportunity", "engagement", "workstream", "lead"]:
         links.update(link_variants(fm.get(key)))
     return links
 
@@ -221,7 +243,7 @@ def related_activity_links(activity):
         links.update(link_variants(link))
     for link in as_list(fm.get("contacts")):
         links.update(link_variants(link))
-    for key in ["account", "contact", "opportunity", "lead", "deal"]:
+    for key in ["account", "contact", "opportunity", "engagement", "workstream", "lead", "deal"]:
         links.update(link_variants(fm.get(key)))
     return links
 
@@ -231,6 +253,34 @@ def related_note_links(note):
     links = set(link_variants(fm.get("primary-parent")))
     for link in as_list(fm.get("secondary-links")):
         links.update(link_variants(link))
+    for link in as_list(fm.get("evidence-links")):
+        links.update(link_variants(link))
+    links.update(link_variants(fm.get("derived-from")))
+    return links
+
+
+def related_source_artifact_links(record):
+    fm = record["frontmatter"]
+    links = set(link_variants(fm.get("primary-parent")))
+    links.update(link_variants(fm.get("summary-note")))
+    for link in as_list(fm.get("secondary-links")):
+        links.update(link_variants(link))
+    return links
+
+
+def related_invoice_links(record):
+    fm = record["frontmatter"]
+    links = set()
+    for key in ["engagement", "workstream", "retainer"]:
+        links.update(link_variants(fm.get(key)))
+    return links
+
+
+def related_payment_links(record):
+    fm = record["frontmatter"]
+    links = set()
+    for key in ["invoice", "engagement"]:
+        links.update(link_variants(fm.get(key)))
     return links
 
 
@@ -491,6 +541,97 @@ def build_qualified_leads_section(candidates):
     )
 
 
+def engagement_finance_candidates(engagements, workstreams, source_artifacts, retainers, invoices, payments, tasks):
+    candidates = []
+    today = date.today()
+    for engagement in engagements:
+        fm = engagement["frontmatter"]
+        if str(fm.get("status", "")).lower() not in {"active", "paused"}:
+            continue
+        engagement_keys = link_variants(engagement["link"])
+        linked_workstreams = [record for record in workstreams if engagement_keys & link_variants(record["frontmatter"].get("engagement"))]
+        workstream_keys = set()
+        for record in linked_workstreams:
+            workstream_keys.update(link_variants(record["link"]))
+        combined_keys = set(engagement_keys) | workstream_keys
+
+        linked_source_artifacts = [record for record in source_artifacts if related_source_artifact_links(record) & combined_keys]
+        linked_retainers = [record for record in retainers if combined_keys & link_variants(record["frontmatter"].get("engagement"))]
+        linked_invoices = [record for record in invoices if related_invoice_links(record) & combined_keys]
+        linked_invoice_keys = set()
+        for record in linked_invoices:
+            linked_invoice_keys.update(link_variants(record["link"]))
+        linked_payments = [
+            record
+            for record in payments
+            if related_payment_links(record) & (combined_keys | linked_invoice_keys)
+        ]
+        linked_tasks = [task for task in tasks if related_task_links(task) & combined_keys]
+
+        total_invoiced = round(
+            sum(as_float(record["frontmatter"].get("amount")) for record in linked_invoices if record["frontmatter"].get("status") != "void"),
+            2,
+        )
+        total_received = round(
+            sum(as_float(record["frontmatter"].get("amount")) for record in linked_payments if record["frontmatter"].get("status") in {"received", "reconciled"}),
+            2,
+        )
+        outstanding = round(max(total_invoiced - total_received, 0), 2)
+        overdue_invoices = [
+            record
+            for record in linked_invoices
+            if str(record["frontmatter"].get("status", "")).lower() == "overdue"
+            or (
+                str(record["frontmatter"].get("status", "")).lower() in {"issued", "partially-paid"}
+                and (as_date(record["frontmatter"].get("due-date")) and as_date(record["frontmatter"].get("due-date")) < today)
+            )
+        ]
+        open_tasks = [task for task in linked_tasks if task["frontmatter"].get("status") in ACTIONABLE_TASK_STATUSES]
+
+        candidates.append(
+            {
+                "engagement": engagement,
+                "workstreams": linked_workstreams,
+                "source_artifacts": linked_source_artifacts,
+                "retainers": linked_retainers,
+                "invoices": linked_invoices,
+                "payments": linked_payments,
+                "open_tasks": open_tasks,
+                "contracted_value": as_float(fm.get("contracted-value")),
+                "retainer_value": round(sum(as_float(record["frontmatter"].get("amount")) for record in linked_retainers if record["frontmatter"].get("status") != "cancelled"), 2),
+                "total_invoiced": total_invoiced,
+                "total_received": total_received,
+                "outstanding": outstanding,
+                "overdue_invoices": overdue_invoices,
+            }
+        )
+    return candidates
+
+
+def build_engagement_finance_section(candidates):
+    ranked = sorted(candidates, key=lambda item: (item["outstanding"], len(item["overdue_invoices"]), len(item["open_tasks"])), reverse=True)[:10]
+    rows = []
+    for candidate in ranked:
+        engagement = candidate["engagement"]
+        fm = engagement["frontmatter"]
+        rows.append(
+            [
+                engagement["link"],
+                f"{candidate['total_invoiced']:.0f} {fm.get('currency', '')}".strip(),
+                f"{candidate['total_received']:.0f} {fm.get('currency', '')}".strip(),
+                f"{candidate['outstanding']:.0f} {fm.get('currency', '')}".strip(),
+                str(len(candidate["overdue_invoices"])),
+                str(len(candidate["workstreams"])),
+                str(len(candidate["source_artifacts"])),
+            ]
+        )
+    return render_table(
+        ["Engagement", "Invoiced", "Received", "Outstanding", "Overdue", "Workstreams", "Sources"],
+        rows,
+        "No active engagement finance records found.",
+    )
+
+
 def build_next_actions_section(tasks, organizations, opportunities, accounts, contacts):
     today = date.today()
     organization_index = build_index(organizations)
@@ -661,7 +802,7 @@ def build_recent_memory_section(activities, notes):
     return render_table(["Type", "Record", "Date"], rows, "No recent memory records found.")
 
 
-def build_summary_bullets(attention, heating, qualified, tasks):
+def build_summary_bullets(attention, heating, qualified, tasks, engagement_finance):
     bullets = []
     if attention:
         top = max(attention, key=lambda item: item["attention_score"])
@@ -694,6 +835,13 @@ def build_summary_bullets(attention, heating, qualified, tasks):
     ]
     if waiting_due:
         bullets.append(f"Follow-up queue: {len(waiting_due)} waiting task(s) need review within 3 days.")
+    finance_outstanding = [item for item in engagement_finance if item["outstanding"] > 0 or item["overdue_invoices"]]
+    if finance_outstanding:
+        top = max(finance_outstanding, key=lambda item: (len(item["overdue_invoices"]), item["outstanding"]))
+        bullets.append(
+            f"Finance exposure: {top['engagement']['link']} has {top['outstanding']:.0f} outstanding "
+            f"and {len(top['overdue_invoices'])} overdue invoice(s)."
+        )
     return bullets or ["No high-signal relationship updates were generated from the current vault state."]
 
 
@@ -735,6 +883,10 @@ def generate_dashboard_content(sections):
             "## Active Opportunities Snapshot",
             "",
             sections["pipeline"],
+            "",
+            "## Engagement Finance",
+            "",
+            sections["engagement_finance"],
             "",
             "## Recent Memory",
             "",
@@ -812,21 +964,29 @@ def main():
     contacts = collect_records("Contacts")
     opportunities = collect_records("Opportunities")
     leads = collect_records("Leads")
+    engagements = collect_records("Engagements")
+    workstreams = collect_records("Workstreams")
+    source_artifacts = collect_records("Source-Artifacts")
+    retainers = collect_records("Retainers")
+    invoices = collect_records("Invoices")
+    payments = collect_records("Payments")
     tasks = collect_records("Tasks")
     activities = collect_records("Activities")
     notes = collect_records("Notes")
 
     relationships = relationship_candidates(organizations, accounts, contacts, opportunities, tasks, activities, notes)
     qualified_leads = lead_candidates(leads, activities, notes, tasks)
+    finance = engagement_finance_candidates(engagements, workstreams, source_artifacts, retainers, invoices, payments, tasks)
 
     sections = {
-        "summary": build_summary_bullets(relationships, relationships, qualified_leads, tasks),
+        "summary": build_summary_bullets(relationships, relationships, qualified_leads, tasks, finance),
         "attention": build_attention_section(relationships),
         "heating": build_heating_section(relationships),
         "qualified_leads": build_qualified_leads_section(qualified_leads),
         "next_actions": build_next_actions_section(tasks, organizations, opportunities, accounts, contacts),
         "waiting": build_waiting_section(tasks, organizations, opportunities, accounts, contacts),
         "pipeline": build_pipeline_section(opportunities),
+        "engagement_finance": build_engagement_finance_section(finance),
         "recent_memory": build_recent_memory_section(activities, notes),
     }
 

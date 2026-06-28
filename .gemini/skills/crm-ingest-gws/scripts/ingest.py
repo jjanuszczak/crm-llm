@@ -125,6 +125,9 @@ NOTE_SEARCH_STOPWORDS = {
 
 
 def get_crm_data_path():
+    env_override = os.getenv("CRM_DATA_PATH")
+    if env_override:
+        return os.path.abspath(env_override)
     env_path = os.path.join(PROJECT_ROOT, ".env")
     if os.path.exists(env_path):
         with open(env_path, "r", encoding="utf-8") as handle:
@@ -132,7 +135,7 @@ def get_crm_data_path():
                 if line.startswith("CRM_DATA_PATH="):
                     path = line.split("=", 1)[1].strip().strip('"').strip("'")
                     return os.path.abspath(os.path.join(PROJECT_ROOT, path)) if not os.path.isabs(path) else path
-    return os.getenv("CRM_DATA_PATH", os.path.join(PROJECT_ROOT, "crm-data"))
+    return os.path.join(PROJECT_ROOT, "crm-data")
 
 
 CRM_DATA_PATH = get_crm_data_path()
@@ -157,13 +160,15 @@ DEFAULT_CRM_DRIVE_LABEL_IDS = ["3qkuqYdjtgsnmboRjKmMiGOHl1MFONMnSuaSNNEbbFcb"]
 GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 DEFAULT_GRANOLA_LOOKBACK_DAYS = 7
 DEFAULT_WHATSAPP_LOOKBACK_DAYS = 7
+DEFAULT_WHATSAPP_SYNC_MAX_DB_SIZE = "500MB"
+DEFAULT_WHATSAPP_ARCHIVE_MAX_MESSAGES = 5000
 GRANOLA_POST_INGEST_TIMEOUT_SECONDS = 180
 WHATSAPP_UPDATES_PATH = os.path.join(STAGING_DIR, "whatsapp_updates.json")
 
 
 def ensure_dirs():
     os.makedirs(STAGING_DIR, exist_ok=True)
-    for name in ["Leads", "Activities", "Contacts", "Accounts", "Organizations", "Opportunities", "Tasks", "Notes", "Deal-Flow"]:
+    for name in ["Leads", "Activities", "Contacts", "Accounts", "Organizations", "Opportunities", "Engagements", "Workstreams", "Source-Artifacts", "Tasks", "Notes", "Deal-Flow"]:
         os.makedirs(os.path.join(CRM_DATA_PATH, name), exist_ok=True)
 
 
@@ -226,6 +231,24 @@ def whatsapp_initial_lookback_days():
     except (TypeError, ValueError):
         return DEFAULT_WHATSAPP_LOOKBACK_DAYS
     return max(1, min(parsed, 30))
+
+
+def whatsapp_sync_max_db_size():
+    settings = load_settings()
+    value = str(settings.get("whatsapp_sync_max_db_size") or DEFAULT_WHATSAPP_SYNC_MAX_DB_SIZE).strip().upper()
+    if re.fullmatch(r"[1-9]\d*(?:KB|MB|GB)", value):
+        return value
+    return DEFAULT_WHATSAPP_SYNC_MAX_DB_SIZE
+
+
+def whatsapp_archive_max_messages():
+    settings = load_settings()
+    value = settings.get("whatsapp_archive_max_messages")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_WHATSAPP_ARCHIVE_MAX_MESSAGES
+    return max(0, min(parsed, 1_000_000))
 
 
 def whatsapp_account_name():
@@ -416,6 +439,15 @@ def extract_wacli_store_dir(payload):
     return ""
 
 
+def wacli_doctor_connected(payload):
+    data = payload.get("data", payload) if isinstance(payload, dict) else {}
+    if not isinstance(data, dict):
+        return False
+    if bool(data.get("connected")):
+        return True
+    return str(data.get("connection_state") or "").strip().lower() == "connected"
+
+
 class WacliAdapter:
     def __init__(self, account="", store_dir=""):
         self.account = str(account or "").strip()
@@ -432,6 +464,13 @@ class WacliAdapter:
     def _env(self):
         env = os.environ.copy()
         env["WACLI_READONLY"] = "1"
+        if self.store_dir:
+            env["WACLI_STORE_DIR"] = self.store_dir
+        return env
+
+    def _write_env(self):
+        env = os.environ.copy()
+        env.pop("WACLI_READONLY", None)
         if self.store_dir:
             env["WACLI_STORE_DIR"] = self.store_dir
         return env
@@ -455,6 +494,86 @@ class WacliAdapter:
         if not self.store_dir:
             self.store_dir = extract_wacli_store_dir(payload) or self.store_dir or default_wacli_store_dir()
         return payload
+
+    def sync_once(self, idle_exit_seconds=30, timeout_seconds=75, max_db_size=""):
+        if not shutil.which("wacli"):
+            return {"status": "unavailable", "reason": "wacli binary not found on PATH"}
+        command = self._base_command() + [
+            "sync",
+            "--once",
+            "--idle-exit",
+            f"{int(idle_exit_seconds)}s",
+            "--max-reconnect",
+            f"{int(idle_exit_seconds)}s",
+        ]
+        if max_db_size:
+            command.extend(["--max-db-size", str(max_db_size)])
+        limits = {"max_db_size": str(max_db_size or "")}
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                env=self._write_env(),
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "status": "timeout",
+                "reason": f"wacli sync exceeded {int(timeout_seconds)} seconds",
+                **limits,
+            }
+        if result.returncode != 0:
+            error_text = result.stderr.strip() or result.stdout.strip() or "wacli sync failed"
+            return {"status": "error", "returncode": result.returncode, "reason": error_text, **limits}
+        return {"status": "ok", **limits}
+
+    def prune_messages(self, retain_count):
+        retain_count = int(retain_count or 0)
+        if retain_count <= 0:
+            return {"status": "disabled", "retain_count": 0, "deleted": 0}
+        db_path = self.database_path()
+        if not os.path.exists(db_path):
+            return {"status": "unavailable", "retain_count": retain_count, "deleted": 0, "reason": f"wacli store not found at {db_path}"}
+
+        conn = None
+        try:
+            conn = sqlite3.connect(db_path, timeout=5)
+            conn.execute("PRAGMA busy_timeout = 5000")
+            before = int(conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0])
+            delete_count = max(0, before - retain_count)
+            if delete_count:
+                conn.execute(
+                    """
+                    DELETE FROM messages
+                    WHERE rowid IN (
+                        SELECT rowid
+                        FROM messages
+                        ORDER BY ts ASC, rowid ASC
+                        LIMIT ?
+                    )
+                    """,
+                    (delete_count,),
+                )
+                conn.commit()
+            after = int(conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0])
+            try:
+                conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            except sqlite3.Error:
+                pass
+            return {
+                "status": "ok",
+                "retain_count": retain_count,
+                "before": before,
+                "after": after,
+                "deleted": before - after,
+                "database_bytes": os.path.getsize(db_path),
+            }
+        except (OSError, sqlite3.Error) as exc:
+            return {"status": "error", "retain_count": retain_count, "deleted": 0, "reason": str(exc)}
+        finally:
+            if conn is not None:
+                conn.close()
 
     def database_path(self):
         store_dir = self.store_dir or default_wacli_store_dir()
@@ -772,16 +891,24 @@ class SourceHarvester:
 
     def get_gmail_messages(self):
         query = f"after:{int(self.since_dt.timestamp())}"
-        listing = run_gws(
-            ["gws", "gmail", "users", "messages", "list", "--params", json.dumps({"userId": "me", "q": query, "maxResults": 50})]
-        )
         messages = []
-        for item in listing.get("messages", []):
-            detail = run_gws(
-                ["gws", "gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": item["id"], "format": "full"})]
+        page_token = None
+        while True:
+            params = {"userId": "me", "q": query, "maxResults": 100}
+            if page_token:
+                params["pageToken"] = page_token
+            listing = run_gws(
+                ["gws", "gmail", "users", "messages", "list", "--params", json.dumps(params)]
             )
-            if "error" not in detail:
-                messages.append(detail)
+            for item in listing.get("messages", []):
+                detail = run_gws(
+                    ["gws", "gmail", "users", "messages", "get", "--params", json.dumps({"userId": "me", "id": item["id"], "format": "full"})]
+                )
+                if "error" not in detail:
+                    messages.append(detail)
+            page_token = listing.get("nextPageToken")
+            if not page_token:
+                break
         return messages
 
     def get_calendar_events(self):
@@ -1040,6 +1167,7 @@ class CRMIndex:
         self.activity_source_refs = {}
         self.activity_history_by_email = {}
         self.notes = []
+        self.source_artifacts = []
         self.drive_ingestion_markers = {}
         self.all_records = []
 
@@ -1055,7 +1183,7 @@ class CRMIndex:
 
 
 def choose_display_name(frontmatter, rel_path):
-    for key in ["full-name", "lead-name", "opportunity-name", "organization-name", "company-name", "task-name", "activity-name"]:
+    for key in ["full-name", "lead-name", "opportunity-name", "engagement-name", "workstream-name", "organization-name", "company-name", "task-name", "activity-name", "title"]:
         if frontmatter.get(key):
             return str(frontmatter.get(key))
     return os.path.splitext(os.path.basename(rel_path))[0]
@@ -1094,10 +1222,21 @@ def record_drive_ingestion_markers(index, frontmatter):
         if doc_id:
             index.mark_drive_ingestion(doc_id, marker_ts)
 
+    source_url = str(frontmatter.get("url", "")).strip()
+    if source_url:
+        index.mark_drive_ingestion(source_url, marker_ts)
+        doc_id = extract_google_doc_id(source_url)
+        if doc_id:
+            index.mark_drive_ingestion(doc_id, marker_ts)
+
+    external_id = str(frontmatter.get("external-id", "")).strip()
+    if external_id:
+        index.mark_drive_ingestion(external_id, marker_ts)
+
 
 def get_crm_index():
     index = CRMIndex()
-    directories = ["Organizations", "Accounts", "Contacts", "Leads", "Opportunities", "Tasks", "Activities", "Notes"]
+    directories = ["Organizations", "Accounts", "Contacts", "Leads", "Opportunities", "Engagements", "Workstreams", "Source-Artifacts", "Tasks", "Activities", "Notes"]
     for directory in directories:
         base_dir = os.path.join(CRM_DATA_PATH, directory)
         for file_path in iter_markdown_files(base_dir):
@@ -1147,6 +1286,11 @@ def get_crm_index():
                     for variant in contact_links:
                         if variant:
                             index.opportunities_by_contact.setdefault(variant, []).append(record)
+            elif directory in {"Engagements", "Workstreams"}:
+                pass
+            elif directory == "Source-Artifacts":
+                index.source_artifacts.append(record)
+                record_drive_ingestion_markers(index, frontmatter)
             elif directory == "Tasks":
                 index.task_records.append(record)
                 task_source_ref = str(frontmatter.get("source-ref", "")).strip()
@@ -1154,7 +1298,7 @@ def get_crm_index():
                     index.task_source_refs.setdefault(task_source_ref, []).append(record)
                 if str(frontmatter.get("status", "")).lower() in ACTIVITY_WRITE_STATUSES:
                     index.open_tasks.append(record)
-                    for link_field in ["opportunity", "account", "contact", "lead", "primary-parent"]:
+                    for link_field in ["opportunity", "engagement", "workstream", "account", "contact", "lead", "primary-parent"]:
                         for variant in link_variants(frontmatter.get(link_field)):
                             index.open_tasks_by_link.setdefault(variant, []).append(record)
                 record_drive_ingestion_markers(index, frontmatter)
@@ -1931,6 +2075,18 @@ def build_secondary_links(primary_anchor, resolutions):
     return unique[:8]
 
 
+def append_secondary_link(secondary_links, link):
+    links = []
+    seen = set()
+    for value in list(secondary_links or []) + ([link] if link else []):
+        normalized = normalize_link(value)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        links.append(f"[[{normalized}]]" if not str(value).startswith("[[") else str(value))
+    return links
+
+
 def build_activity_frontmatter(event, primary_anchor, secondary_links, note_links):
     event_date = event["event_time"][:10]
     title = event["subject_or_title"]
@@ -2043,12 +2199,111 @@ def drive_source_ref(file_id, modified_time):
     return f"drive-doc:{file_id}:{modified_time}"
 
 
-def infer_anchor_from_text(title, text, crm_index):
-    combined = f"{title}\n{text}".lower()
-    combined_tokens = set(search_tokens(combined, limit=40))
+def drive_source_type(file_item, event):
+    mime_type = str(file_item.get("mimeType") or "").strip().lower()
+    combined = f"{event.get('subject_or_title', '')}\n{event.get('body_text', '')}"
+    if mime_type == GOOGLE_DOC_MIME:
+        if re.search(r"\b(meeting|notes|minutes|debrief|board|sync|call)\b", combined, re.I):
+            return "meeting-note"
+        return "doc"
+    if mime_type == "application/vnd.google-apps.spreadsheet":
+        return "sheet"
+    if mime_type == "application/vnd.google-apps.presentation":
+        return "slides"
+    if mime_type == "application/pdf":
+        return "pdf"
+    if mime_type == "application/vnd.google-apps.folder":
+        return "folder"
+    return "other"
+
+
+def maybe_write_source_artifact(event, file_item, primary_anchor, secondary_links, crm_index):
+    source_type = drive_source_type(file_item, event)
+    if source_type not in {"doc", "meeting-note"}:
+        return {"written": False, "duplicate": False, "unsupported": True, "source_type": source_type}
+    if already_ingested_drive_doc(crm_index, event["source_id"], event.get("source_link", ""), event["event_time"]):
+        return {"written": False, "duplicate": True, "unsupported": False, "source_type": source_type}
+
+    title = str(file_item.get("name") or event.get("subject_or_title") or "google-doc").strip()
+    artifact_slug = slugify(f"{title}-{event['source_id'][:8]}")
+    source_dir = os.path.join(CRM_DATA_PATH, "Source-Artifacts")
+    file_path = os.path.join(source_dir, f"{artifact_slug}.md")
+    frontmatter = {
+        "id": f"src-{artifact_slug}",
+        "title": title,
+        "owner": "john",
+        "primary-parent-type": primary_anchor["type"],
+        "primary-parent": primary_anchor["record"]["link"],
+        "secondary-links": secondary_links,
+        "source-system": "google-drive",
+        "source-type": source_type,
+        "url": event.get("source_link", ""),
+        "external-id": event["source_id"],
+        "confidentiality": "internal-only",
+        "status": "active",
+        "summary-note": "",
+        "source": "drive-sync",
+        "source-ref": drive_source_ref(event["source_id"], event["event_time"]),
+        "last-reviewed": event["event_time"][:10],
+        "date-created": iso_today(),
+        "date-modified": iso_today(),
+    }
+    body = "\n".join(
+        [
+            f"# **Source Artifact: {title}**",
+            "",
+            "## **Artifact Summary**",
+            summarize_text(event.get("body_text") or event.get("snippet", ""), 800) or "Imported from labeled Google Drive document.",
+            "",
+            "## **Usage Context**",
+            f"- Primary parent: {primary_anchor['record']['link']}",
+            f"- Drive URL: {event.get('source_link', '')}".rstrip(),
+            f"- Updated: {event.get('event_time', '')[:10]}".rstrip(),
+            "",
+            "## **Review Notes**",
+            "",
+        ]
+    ).rstrip() + "\n"
+    write_frontmatter_file(file_path, frontmatter, body)
+    record = {
+        "type": "Source-Artifact",
+        "file_path": file_path,
+        "rel_path": os.path.relpath(file_path, CRM_DATA_PATH),
+        "link": wikilink_for_path(file_path),
+        "frontmatter": frontmatter,
+        "body": body,
+        "name": title,
+    }
+    crm_index.source_artifacts.append(record)
+    crm_index.all_records.append(record)
+    record_drive_ingestion_markers(crm_index, frontmatter)
+    marker_ts = sort_timestamp(event["event_time"])
+    crm_index.mark_drive_ingestion(frontmatter["source-ref"], marker_ts)
+    crm_index.mark_drive_ingestion(event["source_id"], marker_ts)
+    if event.get("source_link"):
+        crm_index.mark_drive_ingestion(event["source_link"], marker_ts)
+    record_mutation(
+        action="create",
+        entity_type="Source Artifact",
+        title=title,
+        path=file_path,
+        source="drive-sync",
+        related=[primary_anchor["record"]["link"]] + list(secondary_links or []),
+        details=f"source-system=google-drive; source-type={source_type}; external-id={event['source_id']}",
+        crm_data_path=CRM_DATA_PATH,
+    )
+    return {"written": True, "duplicate": False, "unsupported": False, "source_type": source_type, "record": record}
+
+
+def infer_anchor_candidates(title, text, crm_index):
+    title_text = str(title or "").lower()
+    body_text = str(text or "").lower()
+    combined = f"{title_text}\n{body_text}"
+    title_tokens = set(search_tokens(title_text, limit=20))
+    body_tokens = set(search_tokens(body_text, limit=40))
     candidates = []
     seen = set()
-    type_priority = {"opportunity": 0, "contact": 1, "lead": 2, "account": 3, "organization": 4}
+    type_priority = {"workstream": 0, "engagement": 1, "opportunity": 2, "contact": 3, "lead": 4, "account": 5, "organization": 6}
 
     for record in crm_index.all_records:
         record_type = str(record.get("type", "")).lower()
@@ -2062,23 +2317,72 @@ def infer_anchor_from_text(title, text, crm_index):
             continue
         score = 0
         lowered_name = name.lower()
-        if lowered_name in combined:
-            score += 5
+        if lowered_name in title_text:
+            score += 8
+        elif lowered_name in body_text:
+            score += 4
         name_tokens = set(search_tokens(name, limit=8))
-        overlap = combined_tokens & name_tokens
-        score += len(overlap)
+        title_overlap = title_tokens & name_tokens
+        body_overlap = body_tokens & name_tokens
+        score += len(title_overlap) * 3
+        score += len(body_overlap - title_overlap)
+        if record_type == "workstream" and title_overlap:
+            score += 2
+        if record_type == "engagement" and lowered_name in title_text:
+            score += 1
         if record_type == "opportunity":
             for keyword in [record["frontmatter"].get("product-service", ""), record["frontmatter"].get("opportunity-type", "")]:
                 if keyword and str(keyword).lower() in combined:
                     score += 1
         if score > 0:
-            candidates.append((score, type_priority[record_type], record))
+            candidates.append(
+                {
+                    "score": score,
+                    "type_priority": type_priority[record_type],
+                    "type": record_type,
+                    "record": record,
+                }
+            )
 
+    candidates.sort(key=lambda item: (-item["score"], item["type_priority"], item["record"]["name"]))
+    return candidates
+
+
+def infer_anchor_from_text(title, text, crm_index):
+    candidates = infer_anchor_candidates(title, text, crm_index)
     if not candidates:
         return None
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2]["name"]))
-    record = candidates[0][2]
-    return {"type": str(record.get("type", "")).lower(), "record": record}
+    top = candidates[0]
+    return {"type": top["type"], "record": top["record"]}
+
+
+def anchor_ambiguity_context(title, text, crm_index):
+    candidates = infer_anchor_candidates(title, text, crm_index)
+    if not candidates:
+        return {"anchor": None, "ambiguous": False, "candidates": []}
+    top = candidates[0]
+    anchor = {"type": top["type"], "record": top["record"]}
+    if len(candidates) == 1:
+        return {"anchor": anchor, "ambiguous": False, "candidates": candidates[:1]}
+
+    second = candidates[1]
+    ambiguity_types = {"workstream", "engagement", "opportunity"}
+    parent_child_ambiguous = False
+    if top["type"] == "workstream" and second["type"] == "engagement":
+        linked_engagement = normalize_link(top["record"]["frontmatter"].get("engagement"))
+        if linked_engagement == normalize_link(second["record"]["link"]) and second["score"] >= 6:
+            parent_child_ambiguous = True
+    elif top["type"] == "engagement" and second["type"] == "workstream":
+        linked_engagement = normalize_link(second["record"]["frontmatter"].get("engagement"))
+        if linked_engagement == normalize_link(top["record"]["link"]) and second["score"] >= 6:
+            parent_child_ambiguous = True
+    is_ambiguous = (
+        top["type"] in ambiguity_types
+        and second["type"] in ambiguity_types
+        and top["record"]["link"] != second["record"]["link"]
+        and (abs(top["score"] - second["score"]) <= 1 or parent_child_ambiguous)
+    )
+    return {"anchor": anchor, "ambiguous": is_ambiguous, "candidates": candidates[:3]}
 
 
 def already_ingested_drive_doc(crm_index, file_id, source_link, modified_time):
@@ -2814,7 +3118,10 @@ def process_whatsapp_post_ingest(
         checkpoint = str(state.get("whatsapp_last_sync_at") or "").strip()
         if checkpoint:
             since_date = checkpoint[:10]
-            since_dt = datetime.fromisoformat(f"{since_date}T00:00:00+00:00")
+            # Rowid is the durable cursor once a checkpoint exists. A refreshed
+            # wacli archive can append messages whose WhatsApp timestamps predate
+            # the last CRM run, so a timestamp floor here would silently skip them.
+            since_dt = datetime.fromtimestamp(0, UTC)
             start_rowid = int(state.get("whatsapp_last_rowid") or 0)
             bootstrap_full_history = False
         else:
@@ -2830,6 +3137,16 @@ def process_whatsapp_post_ingest(
         whatsapp_updates.append({"status": "unavailable", "reason": str(exc), "since_date": since_date})
         save_json(WHATSAPP_UPDATES_PATH, whatsapp_updates)
         return whatsapp_updates, False
+
+    # Refresh the local archive before reading it. This is deliberately bounded
+    # and fail-open: authentication, network, or lock failures are surfaced in
+    # staging, while any readable existing archive is still processed.
+    if wacli_doctor_connected(doctor):
+        sync_result = {"status": "already_running"}
+    else:
+        sync_result = adapter.sync_once(
+            max_db_size=whatsapp_sync_max_db_size(),
+        )
 
     last_rowid = start_rowid
     rows = []
@@ -2914,6 +3231,11 @@ def process_whatsapp_post_ingest(
             }
         )
 
+    # Retention happens only after every fetched row has been processed. Deleting
+    # old rows is safe for the CRM cursor because SQLite AUTOINCREMENT never
+    # reuses their rowids, and wacli's delete trigger removes matching FTS rows.
+    retention_result = adapter.prune_messages(whatsapp_archive_max_messages())
+
     state["whatsapp_last_sync_at"] = now.isoformat().replace("+00:00", "Z")
     state["whatsapp_last_rowid"] = last_rowid
     save_json(
@@ -2925,6 +3247,8 @@ def process_whatsapp_post_ingest(
             "account": adapter.account,
             "store_dir": adapter.store_dir,
             "doctor": doctor,
+            "sync": sync_result,
+            "retention": retention_result,
             "messages_scanned": len(rows),
             "last_rowid": last_rowid,
             "updates": whatsapp_updates,
@@ -3553,7 +3877,8 @@ def main():
 
         event = EventNormalizer.normalize_drive_file(file_item, doc_text)
         event["_thread_context"] = {}
-        primary_anchor = infer_anchor_from_text(event["subject_or_title"], event["body_text"], crm_index)
+        anchor_context = anchor_ambiguity_context(event["subject_or_title"], event["body_text"], crm_index)
+        primary_anchor = anchor_context["anchor"]
         if not primary_anchor:
             drive_document_updates.append(
                 {
@@ -3561,6 +3886,19 @@ def main():
                     "title": event["subject_or_title"],
                     "modified_time": modified_time,
                     "status": "unresolved_anchor",
+                }
+            )
+            continue
+        if anchor_context.get("ambiguous"):
+            drive_document_updates.append(
+                {
+                    "file_id": file_id,
+                    "title": event["subject_or_title"],
+                    "modified_time": modified_time,
+                    "status": "ambiguous_anchor",
+                    "candidate_links": [item["record"]["link"] for item in anchor_context.get("candidates", [])],
+                    "candidate_types": [item["type"] for item in anchor_context.get("candidates", [])],
+                    "candidate_scores": [item["score"] for item in anchor_context.get("candidates", [])],
                 }
             )
             continue
@@ -3579,6 +3917,9 @@ def main():
         combined_text = NotesAnalyzer.combined_event_text(event)
         signals = inferrer.infer_signals(combined_text, event.get("subject_or_title", ""), "drive")
         action_items = task_analyzer.extract_action_items(combined_text)
+        source_artifact_result = maybe_write_source_artifact(event, file_item, primary_anchor, secondary_links, crm_index)
+        if source_artifact_result.get("record"):
+            secondary_links = append_secondary_link(secondary_links, source_artifact_result["record"]["link"])
 
         matched_tasks = task_analyzer.find_matching_tasks(set(link_variants(primary_anchor["record"]["link"])))
         for task in matched_tasks:
@@ -3615,6 +3956,16 @@ def main():
                 "modified_time": modified_time,
                 "status": status,
                 "primary_parent": primary_anchor["record"]["link"],
+                "source_artifact_status": (
+                    "written"
+                    if source_artifact_result.get("written")
+                    else "duplicate"
+                    if source_artifact_result.get("duplicate")
+                    else "unsupported"
+                    if source_artifact_result.get("unsupported")
+                    else "skipped"
+                ),
+                "source_artifact": source_artifact_result.get("record", {}).get("link", ""),
                 "task_suggestions_added": len(action_items),
             }
         )

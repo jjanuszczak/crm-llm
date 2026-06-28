@@ -1,4 +1,4 @@
-# CRM Schema Spec v4.1
+# CRM Schema Spec v4.2
 
 **Status:** Current
 
@@ -22,6 +22,7 @@ For the end-to-end lead-to-opportunity lifecycle model, see `docs/crm-journey-sp
 - Flat frontmatter is canonical. Do not introduce nested YAML objects.
 - `source` and `source-ref` are provenance fields and should be preserved when known.
 - `owner` is canonical even in the single-operator model.
+- The vault is relationship-first. Execution and finance records extend that model, they do not replace it.
 
 ## Entity Paths
 
@@ -30,6 +31,12 @@ For the end-to-end lead-to-opportunity lifecycle model, see `docs/crm-journey-sp
 - `Contacts/`
 - `Leads/`
 - `Opportunities/`
+- `Engagements/`
+- `Workstreams/`
+- `Source-Artifacts/`
+- `Invoices/`
+- `Payments/`
+- `Retainers/`
 - `Activities/`
 - `Notes/`
 - `Tasks/`
@@ -37,6 +44,17 @@ For the end-to-end lead-to-opportunity lifecycle model, see `docs/crm-journey-sp
 - `Deal-Flow/`
 
 Note: the conceptual entity is `Deal`. The repo is still in a path transition between `Deal-Flow/` and a future `Deals/` canonical directory.
+
+## Commercial And Execution Boundaries
+
+- `Opportunity` is the pre-close pursuit record.
+- A real commercial commitment, including a pilot, becomes an `Engagement`.
+- `Engagement` is the post-close commercial and execution container.
+- `Workstream` is a generalized execution lane within an engagement.
+- Every `Workstream` must belong to exactly one `Engagement`.
+- Significant unpaid or ambiguous pre-close effort remains represented through `Activities`, `Notes`, `Tasks`, and relationship heat inside the opportunity layer.
+- `Notes` remain the durable knowledge object. Do not add a separate first-class `Insight` entity unless future workflows prove `Notes` are overloaded.
+- `Source Artifact` is the canonical reference to an external artifact. `Note` is the durable interpreted memory derived from that artifact.
 
 ## Organizations
 
@@ -167,7 +185,7 @@ Pre-conversion relationship candidates.
 
 ## Opportunities
 
-Concrete commercial or strategic engagements.
+Concrete pre-close commercial pursuits.
 
 | Field | Status | Notes |
 | :--- | :--- | :--- |
@@ -201,6 +219,82 @@ Concrete commercial or strategic engagements.
 | `value` | Deprecated | Legacy ad hoc schema |
 | `tags` | Deprecated | Legacy ad hoc schema |
 
+## Engagements
+
+Post-close commercial and execution container.
+
+| Field | Status | Notes |
+| :--- | :--- | :--- |
+| `id` | Canonical | `eng-...` stable machine id |
+| `engagement-name` | Canonical | Display name |
+| `owner` | Canonical | Record owner |
+| `organization` | Canonical | `[[Organizations/...]]` |
+| `account` | Canonical | `[[Accounts/...]]` |
+| `source-opportunity` | Canonical | Optional `[[Opportunities/...]]` |
+| `primary-contact` | Canonical | Optional `[[Contacts/...]]` |
+| `engagement-type` | Canonical | `retainer`, `pilot`, `advisory`, `consulting`, `board`, `workshop`, `research`, `financing-support`, `other` |
+| `status` | Canonical | `active`, `paused`, `completed`, `cancelled` |
+| `start-date` | Canonical | Start date |
+| `target-end-date` | Canonical | Planned completion date |
+| `end-date` | Canonical | Actual end date when complete |
+| `commercial-model` | Canonical | `retainer`, `fixed-fee`, `milestone`, `pilot`, `hourly`, `hybrid`, `other` |
+| `currency` | Canonical | Currency code |
+| `contracted-value` | Canonical | Numeric commercial summary when known |
+| `success-definition` | Canonical | Short success statement |
+| `source` | Canonical | Provenance |
+| `source-ref` | Canonical | Provenance pointer |
+| `date-created` | Canonical | Creation date |
+| `date-modified` | Canonical | Last mutation date |
+
+## Workstreams
+
+Generalized execution lane within an engagement.
+
+| Field | Status | Notes |
+| :--- | :--- | :--- |
+| `id` | Canonical | `ws-...` stable machine id |
+| `workstream-name` | Canonical | Display name |
+| `owner` | Canonical | Record owner |
+| `engagement` | Canonical | Required `[[Engagements/...]]` |
+| `organization` | Canonical | Convenience link to `[[Organizations/...]]` |
+| `account` | Canonical | Convenience link to `[[Accounts/...]]` |
+| `workstream-type` | Canonical | `advisory`, `implementation`, `research`, `marketing`, `board-support`, `fundraising-support`, `operations`, `other` |
+| `status` | Canonical | `planned`, `active`, `waiting`, `paused`, `completed`, `cancelled` |
+| `start-date` | Canonical | Start date |
+| `target-end-date` | Canonical | Planned completion date |
+| `end-date` | Canonical | Actual end date when complete |
+| `priority` | Canonical | `high`, `medium`, `low` |
+| `success-definition` | Canonical | Short success statement |
+| `source` | Canonical | Provenance |
+| `source-ref` | Canonical | Provenance pointer |
+| `date-created` | Canonical | Creation date |
+| `date-modified` | Canonical | Last mutation date |
+
+## Source Artifacts
+
+Canonical references to external artifacts and evidence.
+
+| Field | Status | Notes |
+| :--- | :--- | :--- |
+| `id` | Canonical | `src-...` stable machine id |
+| `title` | Canonical | Display title |
+| `owner` | Canonical | Record owner |
+| `primary-parent-type` | Canonical | `organization`, `account`, `contact`, `lead`, `opportunity`, `engagement`, `workstream`, `deal`, `activity`, `note`, `invoice`, `payment`, `retainer` |
+| `primary-parent` | Canonical | Primary wikilink |
+| `secondary-links` | Canonical | Secondary wikilinks |
+| `source-system` | Canonical | `google-drive`, `readwise`, `granola`, `gmail`, `url`, `local-file`, `other` |
+| `source-type` | Canonical | `doc`, `sheet`, `slides`, `pdf`, `folder`, `article`, `book`, `podcast`, `meeting-note`, `email-thread`, `video`, `other` |
+| `url` | Canonical | Primary external link |
+| `external-id` | Canonical | Upstream system identifier when known |
+| `confidentiality` | Canonical | `internal-only`, `client-confidential`, `reusable-anonymized`, `public-safe` |
+| `status` | Canonical | `active`, `archived`, `superseded` |
+| `summary-note` | Canonical | Optional `[[Notes/...]]` |
+| `source` | Canonical | Provenance |
+| `source-ref` | Canonical | Provenance pointer |
+| `last-reviewed` | Canonical | Most recent review date |
+| `date-created` | Canonical | Creation date |
+| `date-modified` | Canonical | Last mutation date |
+
 ## Activities
 
 Event records and interaction history.
@@ -213,7 +307,7 @@ Event records and interaction history.
 | `status` | Canonical | `completed`, `scheduled`, `cancelled` currently tolerated |
 | `owner` | Canonical | Record owner |
 | `date` | Canonical | Activity date |
-| `primary-parent-type` | Canonical | `opportunity`, `contact`, `account`, `lead`, `deal` |
+| `primary-parent-type` | Canonical | `opportunity`, `engagement`, `workstream`, `contact`, `account`, `lead`, `deal` |
 | `primary-parent` | Canonical | Primary wikilink |
 | `secondary-links` | Canonical | Secondary wikilinks |
 | `source` | Canonical | Provenance |
@@ -242,9 +336,13 @@ Durable context and strategic memory.
 | `id` | Canonical | Stable machine id |
 | `title` | Canonical | Display name |
 | `owner` | Canonical | Record owner |
-| `primary-parent-type` | Canonical | `lead`, `contact`, `account`, `opportunity`, `deal`, `activity` |
+| `primary-parent-type` | Canonical | `lead`, `contact`, `account`, `opportunity`, `engagement`, `workstream`, `deal`, `activity`, `source-artifact` |
 | `primary-parent` | Canonical | Primary wikilink |
 | `secondary-links` | Canonical | Secondary wikilinks |
+| `note-type` | Canonical | `delivery-insight`, `research`, `sales-intelligence`, `decision`, `retrospective`, `brand-seed`, `general` |
+| `reuse-classification` | Canonical | `internal-only`, `client-confidential`, `reusable-anonymized`, `public-safe` |
+| `evidence-links` | Canonical | Supporting links, usually `[[Source-Artifacts/...]]` or `[[Activities/...]]` |
+| `derived-from` | Canonical | Optional parent note or source-artifact lineage |
 | `source` | Canonical | Provenance |
 | `source-ref` | Canonical | Provenance pointer |
 | `date-created` | Canonical | Creation date |
@@ -266,11 +364,13 @@ Explicit next actions.
 | `due-date` | Canonical | Due date |
 | `date-created` | Canonical | Creation date |
 | `date-modified` | Canonical | Last mutation date |
-| `primary-parent-type` | Canonical | `lead`, `contact`, `account`, `opportunity`, `deal` |
+| `primary-parent-type` | Canonical | `lead`, `contact`, `account`, `opportunity`, `engagement`, `workstream`, `deal` |
 | `primary-parent` | Canonical | Primary wikilink |
 | `account` | Canonical | Convenience link |
 | `contact` | Canonical | Convenience link |
 | `opportunity` | Canonical | Convenience link |
+| `engagement` | Canonical | Convenience link |
+| `workstream` | Canonical | Convenience link |
 | `lead` | Canonical | Convenience link |
 | `type` | Canonical | Currently `follow-up` in templates |
 | `source` | Canonical | Provenance |
@@ -335,6 +435,71 @@ Fundraising inventory object. Current vault path is `Deal-Flow/`.
 | `account-warmth-index` | Calculated | Telemetry cache if present |
 | `days-since-contact` | Deprecated | Computed, should not be persisted |
 
+## Retainers
+
+Recurring or period-based commercial commitment under an engagement.
+
+| Field | Status | Notes |
+| :--- | :--- | :--- |
+| `id` | Canonical | `ret-...` stable machine id |
+| `retainer-name` | Canonical | Display name |
+| `owner` | Canonical | Record owner |
+| `engagement` | Canonical | Required `[[Engagements/...]]` |
+| `currency` | Canonical | Currency code |
+| `amount` | Canonical | Numeric amount |
+| `cadence` | Canonical | `weekly`, `monthly`, `quarterly`, `custom` |
+| `period-start` | Canonical | Period start date |
+| `period-end` | Canonical | Period end date |
+| `status` | Canonical | `planned`, `active`, `completed`, `cancelled` |
+| `source` | Canonical | Provenance |
+| `source-ref` | Canonical | Provenance pointer |
+| `date-created` | Canonical | Creation date |
+| `date-modified` | Canonical | Last mutation date |
+
+## Invoices
+
+Billed commercial obligation tied to an engagement.
+
+| Field | Status | Notes |
+| :--- | :--- | :--- |
+| `id` | Canonical | `inv-...` stable machine id |
+| `invoice-name` | Canonical | Display name |
+| `owner` | Canonical | Record owner |
+| `engagement` | Canonical | Required `[[Engagements/...]]` |
+| `workstream` | Canonical | Optional `[[Workstreams/...]]` |
+| `retainer` | Canonical | Optional `[[Retainers/...]]` |
+| `invoice-number` | Canonical | External or internal invoice identifier |
+| `currency` | Canonical | Currency code |
+| `amount` | Canonical | Numeric amount |
+| `issue-date` | Canonical | Invoice date |
+| `due-date` | Canonical | Payment due date |
+| `status` | Canonical | `draft`, `issued`, `partially-paid`, `paid`, `void`, `overdue` |
+| `source` | Canonical | Provenance |
+| `source-ref` | Canonical | Provenance pointer |
+| `date-created` | Canonical | Creation date |
+| `date-modified` | Canonical | Last mutation date |
+
+## Payments
+
+Recorded payment against one or more invoices.
+
+| Field | Status | Notes |
+| :--- | :--- | :--- |
+| `id` | Canonical | `pay-...` stable machine id |
+| `payment-name` | Canonical | Display name |
+| `owner` | Canonical | Record owner |
+| `invoice` | Canonical | Required `[[Invoices/...]]` |
+| `engagement` | Canonical | Convenience link to `[[Engagements/...]]` |
+| `currency` | Canonical | Currency code |
+| `amount` | Canonical | Numeric amount |
+| `received-date` | Canonical | Payment receipt date |
+| `payment-method` | Canonical | `bank-transfer`, `wire`, `cash`, `check`, `other` |
+| `status` | Canonical | `expected`, `received`, `reconciled`, `failed` |
+| `source` | Canonical | Provenance |
+| `source-ref` | Canonical | Provenance pointer |
+| `date-created` | Canonical | Creation date |
+| `date-modified` | Canonical | Last mutation date |
+
 ## Calculated Signals Summary
 
 These are currently used by the dashboard and intelligence layers, but they are not core business truth:
@@ -352,4 +517,5 @@ These are currently used by the dashboard and intelligence layers, but they are 
 1. Remove `deal-value` once all readers rely only on `commercial-value`.
 2. Stop writing calculated fields into templates where they are not needed as caches.
 3. Remove legacy aliases such as `full--name`, `activity-date`, `stage` on Accounts, and old ad hoc Opportunity fields.
-4. Complete `Deal-Flow/` to `Deals/` path normalization.
+4. `Deliverable` remains deferred in the current implementation wave. Revisit it only after engagement, workstream, finance, and source-artifact workflows are stable in real operator use.
+5. Complete `Deal-Flow/` to `Deals/` path normalization.

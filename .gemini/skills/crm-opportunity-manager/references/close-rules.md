@@ -5,6 +5,8 @@ Won:
 - set `probability=100`
 - set `is-active=false`
 - confirm `close-date`
+- create or link the post-close `Engagement` when the work is truly won
+- optionally seed the first `Workstream`
 - keep the opportunity as durable history
 
 Lost:

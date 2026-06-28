@@ -1,7 +1,7 @@
 # Skill: CRM Daily Processing
 
 ## Description
-Runs the standard daily CRM operating loop for a live vault with the principal operator kept in the loop. This skill is the top-level workflow for starting the day, reconciling new Workspace signals, collecting off-system updates from the user, reviewing tasks and opportunities, and refreshing the relationship views.
+Runs the standard daily CRM operating loop for a live vault with the principal operator kept in the loop. This skill is the top-level workflow for starting the day, reconciling new Workspace signals, collecting off-system updates from the user, reviewing tasks plus pre-close and post-close work, and refreshing the relationship views.
 
 ## Usage
 `crm-daily-processing`
@@ -9,7 +9,7 @@ Runs the standard daily CRM operating loop for a live vault with the principal o
 Use this skill when the user wants to:
 - start the day in the CRM
 - run the normal daily operating loop
-- reconcile new Gmail / Calendar activity with live opportunities and tasks
+- reconcile new Gmail / Calendar activity with live opportunities, engagements, workstreams, and tasks
 - optionally reconcile Granola meeting notes when Granola MCP is available
 - review overdue or waiting work
 - capture updates that happened outside Google Workspace or outside the CRM
@@ -23,7 +23,7 @@ Do not use this skill for one-off record creation when a narrower skill is clear
    * Form a quick view of:
      * urgent `todo` work
      * `waiting` items coming due for review
-     * hot relationships or opportunities that need explicit judgment
+     * hot relationships, opportunities, or engagements that need explicit judgment
 
 2. **Run Workspace Intake**
    * Run the canonical Workspace ingest flow via `crm-ingest-gws`.
@@ -64,7 +64,7 @@ Do not use this skill for one-off record creation when a narrower skill is clear
      * what tasks are actually done, blocked, or waiting?
      * what opportunities changed stage, momentum, or commercial reality?
    * When Granola is available, treat it as a partial substitute for manual recall of meeting details, but still ask for anything that happened outside captured systems.
-   * Convert user-provided updates into durable CRM changes, usually as `Activities`, task updates, lead-stage changes, or opportunity-stage updates.
+   * Convert user-provided updates into durable CRM changes, usually as `Activities`, task updates, lead-stage changes, opportunity-stage updates, engagement updates, or workstream updates.
 
 6. **Review Task Queue**
    * Review overdue `todo` tasks first.
@@ -75,10 +75,12 @@ Do not use this skill for one-off record creation when a narrower skill is clear
      * `completed` when the task was done or clearly superseded
    * When moving a task to `waiting`, reset `due-date` to the next review date.
 
-7. **Review Opportunity And Lead Status**
+7. **Review Opportunity, Engagement, And Lead Status**
    * Check whether any live opportunities should change stage, probability, or next-step framing.
+   * Check whether any closed-won opportunities still need a formal engagement handoff.
+   * Check whether active engagements have the right workstreams, execution state, and finance tracking coverage.
    * Check whether active leads should stay leads, advance in lead status, or convert.
-   * Use `crm-lead-manager` and `crm-opportunity-manager` when lifecycle updates are substantive.
+   * Use `crm-lead-manager`, `crm-opportunity-manager`, `crm-engagement-manager`, and `crm-finance-manager` when lifecycle updates are substantive.
 
 8. **Execute Immediate Follow-Through**
    * Draft or send the obvious follow-up emails the user asks for.
@@ -130,11 +132,16 @@ Use these as sub-workflows when needed:
 - `update-dashboard`
 - `crm-lead-manager`
 - `crm-opportunity-manager`
+- `crm-engagement-manager`
+- `crm-finance-manager`
+- `crm-source-artifact-manager`
 - `crm-create-activity`
 - `crm-create-task`
 - `crm-create-note`
 - `crm-create-lead`
 - `crm-create-opportunity`
+- `crm-create-engagement`
+- `crm-create-workstream`
 - `crm-create-daily-report`
 
 ## Granola Guidance

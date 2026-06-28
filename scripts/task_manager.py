@@ -11,7 +11,7 @@ from navigation_manager import record_mutation
 
 VALID_STATUSES = {"todo", "waiting", "completed", "in-progress", "blocked", "done", "canceled"}
 VALID_PRIORITIES = {"high", "medium", "low"}
-VALID_PARENT_TYPES = {"lead", "contact", "account", "opportunity", "deal"}
+VALID_PARENT_TYPES = {"lead", "contact", "account", "opportunity", "engagement", "workstream", "deal"}
 VALID_SOURCES = {"manual", "activity", "inbox", "gmail", "calendar"}
 
 CRM_DATA_PATH = get_crm_data_path()
@@ -20,6 +20,8 @@ LEADS_DIR = os.path.join(CRM_DATA_PATH, "Leads")
 CONTACTS_DIR = os.path.join(CRM_DATA_PATH, "Contacts")
 ACCOUNTS_DIR = os.path.join(CRM_DATA_PATH, "Accounts")
 OPPORTUNITIES_DIR = os.path.join(CRM_DATA_PATH, "Opportunities")
+ENGAGEMENTS_DIR = os.path.join(CRM_DATA_PATH, "Engagements")
+WORKSTREAMS_DIR = os.path.join(CRM_DATA_PATH, "Workstreams")
 DEALS_DIR = os.path.join(CRM_DATA_PATH, "Deal-Flow")
 
 
@@ -39,6 +41,8 @@ def parent_dir_for_type(parent_type):
         "contact": CONTACTS_DIR,
         "account": ACCOUNTS_DIR,
         "opportunity": OPPORTUNITIES_DIR,
+        "engagement": ENGAGEMENTS_DIR,
+        "workstream": WORKSTREAMS_DIR,
         "deal": DEALS_DIR,
     }[parent_type]
 
@@ -69,6 +73,8 @@ def cmd_create(args):
     account_path = resolve_optional_record_path(ACCOUNTS_DIR, CRM_DATA_PATH, args.account, "Account")
     contact_path = resolve_optional_record_path(CONTACTS_DIR, CRM_DATA_PATH, args.contact, "Contact")
     opportunity_path = resolve_optional_record_path(OPPORTUNITIES_DIR, CRM_DATA_PATH, args.opportunity, "Opportunity")
+    engagement_path = resolve_optional_record_path(ENGAGEMENTS_DIR, CRM_DATA_PATH, args.engagement, "Engagement")
+    workstream_path = resolve_optional_record_path(WORKSTREAMS_DIR, CRM_DATA_PATH, args.workstream, "Workstream")
     lead_path = resolve_optional_record_path(LEADS_DIR, CRM_DATA_PATH, args.lead, "Lead")
 
     if args.primary_parent_type == "account" and not account_path:
@@ -77,6 +83,10 @@ def cmd_create(args):
         contact_path = parent_path
     if args.primary_parent_type == "opportunity" and not opportunity_path:
         opportunity_path = parent_path
+    if args.primary_parent_type == "engagement" and not engagement_path:
+        engagement_path = parent_path
+    if args.primary_parent_type == "workstream" and not workstream_path:
+        workstream_path = parent_path
     if args.primary_parent_type == "lead" and not lead_path:
         lead_path = parent_path
 
@@ -96,6 +106,8 @@ def cmd_create(args):
         "account": link_for_path(account_path, CRM_DATA_PATH) if account_path else "",
         "contact": link_for_path(contact_path, CRM_DATA_PATH) if contact_path else "",
         "opportunity": link_for_path(opportunity_path, CRM_DATA_PATH) if opportunity_path else "",
+        "engagement": link_for_path(engagement_path, CRM_DATA_PATH) if engagement_path else "",
+        "workstream": link_for_path(workstream_path, CRM_DATA_PATH) if workstream_path else "",
         "lead": link_for_path(lead_path, CRM_DATA_PATH) if lead_path else "",
         "type": args.type,
         "source": args.source,
@@ -130,7 +142,7 @@ def cmd_create(args):
         title=args.name,
         path=file_path,
         source=args.source,
-        related=[frontmatter["primary-parent"], frontmatter["account"], frontmatter["contact"], frontmatter["opportunity"], frontmatter["lead"]],
+        related=[frontmatter["primary-parent"], frontmatter["account"], frontmatter["contact"], frontmatter["opportunity"], frontmatter["engagement"], frontmatter["workstream"], frontmatter["lead"]],
         details=f"status={status}; priority={args.priority}; due-date={args.due_date}",
         crm_data_path=CRM_DATA_PATH,
     )
@@ -178,6 +190,12 @@ def cmd_update(args):
     if args.opportunity is not None:
         opportunity_path = resolve_optional_record_path(OPPORTUNITIES_DIR, CRM_DATA_PATH, args.opportunity, "Opportunity")
         frontmatter["opportunity"] = link_for_path(opportunity_path, CRM_DATA_PATH) if opportunity_path else ""
+    if args.engagement is not None:
+        engagement_path = resolve_optional_record_path(ENGAGEMENTS_DIR, CRM_DATA_PATH, args.engagement, "Engagement")
+        frontmatter["engagement"] = link_for_path(engagement_path, CRM_DATA_PATH) if engagement_path else ""
+    if args.workstream is not None:
+        workstream_path = resolve_optional_record_path(WORKSTREAMS_DIR, CRM_DATA_PATH, args.workstream, "Workstream")
+        frontmatter["workstream"] = link_for_path(workstream_path, CRM_DATA_PATH) if workstream_path else ""
     if args.lead is not None:
         lead_path = resolve_optional_record_path(LEADS_DIR, CRM_DATA_PATH, args.lead, "Lead")
         frontmatter["lead"] = link_for_path(lead_path, CRM_DATA_PATH) if lead_path else ""
@@ -199,7 +217,7 @@ def cmd_update(args):
         title=frontmatter.get("task-name", load_display_name(path)),
         path=path,
         source=frontmatter.get("source", ""),
-        related=[frontmatter.get("primary-parent", ""), frontmatter.get("account", ""), frontmatter.get("contact", ""), frontmatter.get("opportunity", ""), frontmatter.get("lead", "")],
+        related=[frontmatter.get("primary-parent", ""), frontmatter.get("account", ""), frontmatter.get("contact", ""), frontmatter.get("opportunity", ""), frontmatter.get("engagement", ""), frontmatter.get("workstream", ""), frontmatter.get("lead", "")],
         details="updated task metadata/body",
         crm_data_path=CRM_DATA_PATH,
     )
@@ -249,6 +267,8 @@ def build_parser():
     create_parser.add_argument("--account")
     create_parser.add_argument("--contact")
     create_parser.add_argument("--opportunity")
+    create_parser.add_argument("--engagement")
+    create_parser.add_argument("--workstream")
     create_parser.add_argument("--lead")
     create_parser.add_argument("--type", default="follow-up")
     create_parser.add_argument("--source", default="manual")
@@ -271,6 +291,8 @@ def build_parser():
     update_parser.add_argument("--account")
     update_parser.add_argument("--contact")
     update_parser.add_argument("--opportunity")
+    update_parser.add_argument("--engagement")
+    update_parser.add_argument("--workstream")
     update_parser.add_argument("--lead")
     update_parser.add_argument("--source")
     update_parser.add_argument("--source-ref")

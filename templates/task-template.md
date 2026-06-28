@@ -7,11 +7,13 @@ owner: "{{Owner}}"
 due-date: {{YYYY-MM-DD}}
 date-created: {{YYYY-MM-DD}}
 date-modified: {{YYYY-MM-DD}}
-primary-parent-type: "{{lead | contact | account | opportunity | deal}}"
+primary-parent-type: "{{lead | contact | account | opportunity | engagement | workstream | deal}}"
 primary-parent: "[[{{Primary Parent}}]]"
 account: "[[{{Account}}]]"
 contact: "[[{{Contact}}]]"
 opportunity: "[[{{Opportunity}}]]"
+engagement: "[[{{Engagement}}]]"
+workstream: "[[{{Workstream}}]]"
 lead: "[[{{Lead}}]]"
 type: follow-up
 source: "{{manual | activity | inbox | gmail | calendar}}"

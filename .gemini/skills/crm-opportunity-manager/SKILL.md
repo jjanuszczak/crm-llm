@@ -3,7 +3,7 @@
 ## Description
 Manages the lifecycle of active commercial work in the CRM. Use this skill when the user wants to create, structure, advance, review, or close an `Opportunity`, or when they want to decide what should exist next around an active opportunity.
 
-This skill treats `Opportunity` as the operational center of gravity once active work exists. It owns the workflow question:
+This skill treats `Opportunity` as the operational center of gravity for pre-close commercial work. It owns the workflow question:
 
 - "What should exist, change, or happen next for this opportunity?"
 
@@ -14,6 +14,7 @@ Current implementation support covers:
 - stage and probability updates
 - paused opportunity handling for "come back later" workflows
 - won/lost close handling
+- optional won-to-engagement handoff with first workstream creation
 - stale archive handling
 - spawning follow-up `Tasks`, `Activities`, and `Notes`
 - read-only opportunity review
@@ -25,6 +26,7 @@ Current implementation support covers:
 - The user wants to assign a primary contact or influencer set.
 - The user wants to create follow-up operational records from opportunity context.
 - The user wants to mark an opportunity won, lost, or stale.
+- The user wants to convert a won opportunity into a post-close engagement.
 - The user wants a concise review of what is missing or what should happen next.
 
 ## Workflow
@@ -61,6 +63,11 @@ Current implementation support covers:
    - Mutation workflows must update `crm-data/index.md` and append `crm-data/log.md`.
    - Prefer workflow-level judgment, not ad hoc frontmatter edits.
 
+5. **Respect the pre-close boundary**
+   - `Opportunity` is the pre-close pursuit record.
+   - Once work is truly won, prefer creating an `Engagement`.
+   - If the opportunity is marked `closed-won` but no engagement exists yet, treat that as a handoff gap.
+
 ## User-Facing Usage
 
 The user can ask for:
@@ -69,6 +76,7 @@ The user can ask for:
 - "Pause this opportunity until next quarter."
 - "Add two influencers."
 - "Mark this opportunity lost and capture the reason."
+- "Mark this opportunity won and create the engagement."
 - "Create the follow-up task and the meeting activity."
 - "Review this opportunity and tell me what is missing."
 
@@ -96,3 +104,4 @@ Prefer the current CLI for supported flows:
 - The canonical implementation is [scripts/opportunity_manager.py](scripts/opportunity_manager.py).
 - The compatibility wrapper remains at [../../../../scripts/opportunity_manager.py](../../../../scripts/opportunity_manager.py).
 - This skill complements `crm-lead-manager`; it does not replace lead qualification or conversion policy.
+- For post-close execution structure, it should hand off into `crm-engagement-manager`, not absorb engagement lifecycle logic wholesale.

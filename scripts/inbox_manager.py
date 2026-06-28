@@ -140,9 +140,13 @@ def create_note_from_inbox(frontmatter, parent_type, parent_name):
             "note-id": note_id,
             "Note Title": title,
             "Owner": frontmatter.get("owner", "john"),
-            "lead | contact | account | opportunity | deal | activity": parent_type,
+            "lead | contact | account | opportunity | engagement | workstream | deal | activity | source-artifact": parent_type,
             "Primary Parent": parent_name,
             "Secondary Link 1": parent_name,
+            "delivery-insight | research | sales-intelligence | decision | retrospective | brand-seed | general": "general",
+            "internal-only | client-confidential | reusable-anonymized | public-safe": "internal-only",
+            "Evidence Link 1": parent_name,
+            "Derived From": "",
             "manual | inbox | gmail | calendar | ai-generated": "inbox",
             "Source Reference": frontmatter.get("id", ""),
             "YYYY-MM-DD": note_date,
@@ -150,6 +154,8 @@ def create_note_from_inbox(frontmatter, parent_type, parent_name):
     )
     note_frontmatter, note_body = parse_markdown_frontmatter(rendered)
     note_frontmatter["secondary-links"] = []
+    note_frontmatter["evidence-links"] = []
+    note_frontmatter["derived-from"] = ""
     note_body = note_body.replace("{{Durable background, interpretation, research, or strategic memory.}}", "Created from Inbox processing.")
     write_frontmatter_file(file_path, note_frontmatter, note_body)
     return file_path
@@ -172,7 +178,7 @@ def create_activity_from_inbox(frontmatter, parent_type, parent_name):
             "call | email | meeting | analysis | note-derived": "note-derived",
             "Owner": frontmatter.get("owner", "john"),
             "YYYY-MM-DD": activity_date,
-            "opportunity | contact | account | lead | deal": parent_type,
+            "opportunity | engagement | workstream | contact | account | lead | deal": parent_type,
             "Primary Parent": parent_name,
             "Secondary Link 1": parent_name,
             "manual | gmail | calendar | inbox": "inbox",

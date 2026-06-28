@@ -1,4 +1,7 @@
 import argparse
+import contextlib
+import importlib.util
+import io
 import os
 import re
 import sys
@@ -45,11 +48,13 @@ OPPORTUNITIES_DIR = os.path.join(CRM_DATA_PATH, "Opportunities")
 TASKS_DIR = os.path.join(CRM_DATA_PATH, "Tasks")
 ACTIVITIES_DIR = os.path.join(CRM_DATA_PATH, "Activities")
 NOTES_DIR = os.path.join(CRM_DATA_PATH, "Notes")
+ENGAGEMENTS_DIR = os.path.join(CRM_DATA_PATH, "Engagements")
 
 OPPORTUNITY_TEMPLATE_PATH = os.path.join(PROJECT_ROOT, "templates", "opportunity-template.md")
 TASK_TEMPLATE_PATH = os.path.join(PROJECT_ROOT, "templates", "task-template.md")
 ACTIVITY_TEMPLATE_PATH = os.path.join(PROJECT_ROOT, "templates", "activity-template.md")
 NOTE_TEMPLATE_PATH = os.path.join(PROJECT_ROOT, "templates", "note-template.md")
+ENGAGEMENT_MANAGER_PATH = os.path.join(PROJECT_ROOT, ".gemini", "skills", "crm-engagement-manager", "scripts", "engagement_manager.py")
 
 
 def ensure_dirs():
@@ -173,6 +178,27 @@ def load_opportunity(reference):
     return path, frontmatter, body
 
 
+def load_engagement_manager():
+    module_name = "crm_engagement_manager_for_opportunity_handoff"
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        return existing
+    original_crm_data_path = os.environ.get("CRM_DATA_PATH")
+    os.environ["CRM_DATA_PATH"] = CRM_DATA_PATH
+    spec = importlib.util.spec_from_file_location(module_name, ENGAGEMENT_MANAGER_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if original_crm_data_path is None:
+            os.environ.pop("CRM_DATA_PATH", None)
+        else:
+            os.environ["CRM_DATA_PATH"] = original_crm_data_path
+    sys.modules[module_name] = module
+    return module
+
+
 def infer_organization_path(account_path):
     frontmatter, _body = load_frontmatter_file(account_path)
     organization_value = frontmatter.get("organization")
@@ -291,6 +317,8 @@ def render_task_content(task_name, owner, due_date, priority, description, conte
             "Account": account,
             "Contact": contact,
             "Opportunity": opportunity,
+            "Engagement": "",
+            "Workstream": "",
             "Lead": "",
             "manual | activity | inbox | gmail | calendar": "manual",
             "Source Reference": source_ref,
@@ -341,9 +369,13 @@ def render_note_content(title, owner, primary_parent, secondary_link, source_ref
             "note-id": slugify(title),
             "Note Title": title,
             "Owner": owner,
-            "lead | contact | account | opportunity | deal | activity": "opportunity",
+            "lead | contact | account | opportunity | engagement | workstream | deal | activity | source-artifact": "opportunity",
             "Primary Parent": primary_parent,
             "Secondary Link 1": secondary_link or primary_parent,
+            "delivery-insight | research | sales-intelligence | decision | retrospective | brand-seed | general": "general",
+            "internal-only | client-confidential | reusable-anonymized | public-safe": "internal-only",
+            "Evidence Link 1": primary_parent,
+            "Derived From": "",
             "manual | inbox | gmail | calendar | ai-generated": "manual",
             "Source Reference": source_ref,
             "YYYY-MM-DD": date.today().strftime("%Y-%m-%d"),
@@ -463,6 +495,8 @@ def create_note_record(opportunity_path, opportunity_fm, title, context, implica
             opportunity_fm.get("organization", ""),
         ]
     )
+    frontmatter["evidence-links"] = []
+    frontmatter["derived-from"] = ""
     write_frontmatter_file(file_path, frontmatter, body)
     return file_path
 
@@ -677,6 +711,62 @@ def cmd_set_probability(args):
 def cmd_mark_won(args):
     file_path, frontmatter, body = load_opportunity(args.opportunity)
     close_date = args.close_date or date.today().strftime("%Y-%m-%d")
+    created_engagement = ""
+    created_workstream = ""
+
+    if args.create_workstream and not args.create_engagement:
+        raise ValueError("create-workstream requires create-engagement in the won handoff flow.")
+
+    if args.create_engagement:
+        engagement_manager = load_engagement_manager()
+        engagement_args = argparse.Namespace(
+            account=normalize_reference(frontmatter.get("account", "")),
+            organization=normalize_reference(frontmatter.get("organization", "")),
+            source_opportunity=link_target_for_path(file_path),
+            primary_contact=normalize_reference(frontmatter.get("primary-contact", "")),
+            name=args.engagement_name,
+            engagement_type=args.engagement_type or "other",
+            status=args.engagement_status,
+            start_date=args.engagement_start_date or close_date,
+            target_end_date=args.engagement_target_end_date,
+            end_date=args.engagement_end_date,
+            commercial_model=args.commercial_model,
+            currency=args.currency,
+            contracted_value=args.contracted_value if args.contracted_value is not None else frontmatter.get("commercial-value", 0),
+            success_definition=args.engagement_success_definition,
+            summary=args.engagement_summary or summary_text(body),
+            commercial_notes=args.engagement_commercial_notes,
+            owner=args.engagement_owner or frontmatter.get("owner", "john"),
+            source="opportunity-conversion",
+            source_ref=normalize_reference(args.opportunity),
+        )
+        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+            engagement_manager.cmd_create(engagement_args)
+        created_engagement = stdout.getvalue().strip().splitlines()[-1]
+
+        if args.create_workstream:
+            workstream_args = argparse.Namespace(
+                engagement=created_engagement,
+                name=args.workstream_name,
+                workstream_type=args.workstream_type,
+                status=args.workstream_status,
+                start_date=args.workstream_start_date or close_date,
+                target_end_date=args.workstream_target_end_date,
+                end_date=args.workstream_end_date,
+                priority=args.workstream_priority,
+                success_definition=args.workstream_success_definition or args.engagement_success_definition or "",
+                objective=args.workstream_objective or summary_text(body),
+                scope=args.workstream_scope,
+                current_state=args.workstream_current_state,
+                outputs=args.workstream_outputs or [],
+                owner=args.workstream_owner or frontmatter.get("owner", "john"),
+                source="opportunity-conversion",
+                source_ref=normalize_reference(args.opportunity),
+            )
+            with contextlib.redirect_stdout(io.StringIO()) as stdout:
+                engagement_manager.cmd_create_workstream(workstream_args)
+            created_workstream = stdout.getvalue().strip().splitlines()[-1]
+
     frontmatter["stage"] = "closed-won"
     frontmatter["is-active"] = False
     frontmatter["probability"] = 100
@@ -685,7 +775,12 @@ def cmd_mark_won(args):
     frontmatter["lost-reason"] = ""
     frontmatter["lost-date"] = ""
     frontmatter["date-modified"] = date.today().strftime("%Y-%m-%d")
-    write_opportunity(file_path, frontmatter, body, action="update", details=f"marked won; close-date={close_date}")
+    details = [f"marked won; close-date={close_date}"]
+    if created_engagement:
+        details.append(f"engagement={link_for_path(created_engagement)}")
+    if created_workstream:
+        details.append(f"workstream={link_for_path(created_workstream)}")
+    write_opportunity(file_path, frontmatter, body, action="update", details="; ".join(details))
     print(file_path)
 
 
@@ -839,12 +934,22 @@ def gather_related_records(base_dir, opportunity_link):
     return sorted(matches, key=lambda item: os.path.basename(item[0]).lower())
 
 
+def gather_linked_engagements(opportunity_link):
+    matches = []
+    for file_path in iter_markdown_files(ENGAGEMENTS_DIR):
+        frontmatter, _body = load_frontmatter_file(file_path)
+        if normalize_reference(frontmatter.get("source-opportunity", "")) == normalize_reference(opportunity_link):
+            matches.append((file_path, frontmatter))
+    return sorted(matches, key=lambda item: os.path.basename(item[0]).lower())
+
+
 def cmd_review(args):
     opportunity_path, frontmatter, body = load_opportunity(args.opportunity)
     opportunity_link = link_for_path(opportunity_path)
     tasks = gather_related_records(TASKS_DIR, opportunity_link)
     activities = gather_related_records(ACTIVITIES_DIR, opportunity_link)
     notes = gather_related_records(NOTES_DIR, opportunity_link)
+    engagements = gather_linked_engagements(opportunity_link)
 
     open_tasks = [item for item in tasks if item[1].get("status") not in {"done", "completed", "canceled"}]
     recent_activity_dates = sorted(
@@ -867,6 +972,8 @@ def cmd_review(args):
         missing.append("no-open-tasks")
     if frontmatter.get("is-active") and not recent_activity_dates:
         missing.append("no-linked-activities")
+    if frontmatter.get("stage") == "closed-won" and not engagements:
+        missing.append("no-engagement-handoff")
 
     print(f"Opportunity: {frontmatter.get('opportunity-name', os.path.basename(opportunity_path))}")
     print(f"Path: {opportunity_path}")
@@ -880,6 +987,7 @@ def cmd_review(args):
     print(f"Open Tasks: {len(open_tasks)}")
     print(f"Activities: {len(activities)}")
     print(f"Notes: {len(notes)}")
+    print(f"Linked Engagements: {len(engagements)}")
     print(f"Recent Activity: {recent_activity_dates[0] if recent_activity_dates else 'none'}")
     print("Missing/Attention:")
     if missing:
@@ -898,6 +1006,8 @@ def cmd_review(args):
         print("- confirm proposal follow-up owner and decision timeline")
     elif frontmatter.get("stage") == "negotiation":
         print("- capture blockers, owners, and close path explicitly")
+    elif "no-engagement-handoff" in missing:
+        print("- create the post-close engagement handoff and first workstream")
     else:
         print("- review summary, next steps, and supporting records")
 
@@ -965,6 +1075,34 @@ def build_parser():
     won_parser = subparsers.add_parser("mark-won", help="Mark opportunity closed won.")
     won_parser.add_argument("opportunity")
     won_parser.add_argument("--close-date")
+    won_parser.add_argument("--create-engagement", action="store_true")
+    won_parser.add_argument("--engagement-name")
+    won_parser.add_argument("--engagement-type")
+    won_parser.add_argument("--engagement-status", default="active")
+    won_parser.add_argument("--engagement-start-date")
+    won_parser.add_argument("--engagement-target-end-date")
+    won_parser.add_argument("--engagement-end-date")
+    won_parser.add_argument("--commercial-model", default="other")
+    won_parser.add_argument("--currency", default="USD")
+    won_parser.add_argument("--contracted-value", type=int)
+    won_parser.add_argument("--engagement-success-definition")
+    won_parser.add_argument("--engagement-summary")
+    won_parser.add_argument("--engagement-commercial-notes")
+    won_parser.add_argument("--engagement-owner")
+    won_parser.add_argument("--create-workstream", action="store_true")
+    won_parser.add_argument("--workstream-name")
+    won_parser.add_argument("--workstream-type", default="advisory")
+    won_parser.add_argument("--workstream-status", default="active")
+    won_parser.add_argument("--workstream-start-date")
+    won_parser.add_argument("--workstream-target-end-date")
+    won_parser.add_argument("--workstream-end-date")
+    won_parser.add_argument("--workstream-priority", default="medium")
+    won_parser.add_argument("--workstream-success-definition")
+    won_parser.add_argument("--workstream-objective")
+    won_parser.add_argument("--workstream-scope")
+    won_parser.add_argument("--workstream-current-state")
+    won_parser.add_argument("--workstream-outputs", nargs="*", default=[])
+    won_parser.add_argument("--workstream-owner")
     won_parser.set_defaults(func=cmd_mark_won)
 
     lost_parser = subparsers.add_parser("mark-lost", help="Mark opportunity closed lost.")

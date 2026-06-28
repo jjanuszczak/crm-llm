@@ -12,13 +12,13 @@ It is a planning artifact only. It does not imply that the skill, scripts, or su
 
 ## Purpose
 
-`crm-opportunity-manager` should be the top-level operating skill for active commercial work.
+`crm-opportunity-manager` should be the top-level operating skill for pre-close commercial work.
 
 It should own the user-facing question:
 
 - "What should exist, change, or happen next for this opportunity?"
 
-This skill should manage the lifecycle of an `Opportunity` from creation through active execution to won, lost, or stale/archived states.
+This skill should manage the lifecycle of an `Opportunity` from creation through pre-close pursuit to won, lost, or stale/archived states.
 
 It should sit above narrower utility actions such as:
 
@@ -34,8 +34,8 @@ Those utilities should support the workflow, not define it.
 
 This skill should be top-level because:
 
-- `Opportunity` is the operational center of gravity when active work exists.
-- post-conversion execution is the largest current workflow gap in the repo.
+- `Opportunity` is the operational center of gravity when active pre-close work exists.
+- commercial handoff into post-close execution is one of the largest workflow gaps in the repo.
 - stage movement, stakeholder linkage, milestone management, and close logic are judgment-heavy.
 - opportunity work spans multiple record types:
   - `Opportunity`
@@ -63,6 +63,7 @@ The skill should own:
 - close-won and close-lost handling
 - stale opportunity review and archive decisions
 - spawning follow-up `Tasks`, `Activities`, and `Notes`
+- won-to-engagement handoff when work is actually sold
 
 The skill should not own:
 
@@ -113,11 +114,12 @@ The skill should not introduce deprecated opportunity fields.
 
 ## Operating Assumptions
 
-- Active work should usually anchor new `Notes`, `Activities`, and `Tasks` primarily to the `Opportunity`.
+- Active pre-close work should usually anchor new `Notes`, `Activities`, and `Tasks` primarily to the `Opportunity`.
 - `Organization` owns stable identity.
 - `Account` owns the commercial relationship wrapper.
 - `Contact` owns person identity.
-- `Opportunity` owns the active execution path.
+- `Opportunity` owns the pre-close execution path.
+- `Engagement` owns the post-close execution path.
 
 ## When To Use
 
@@ -229,7 +231,9 @@ The skill should:
 - set final `probability`
 - set `is-active=false`
 - set or confirm `close-date`
-- create follow-up tasks only if post-close work exists
+- create or link the post-close `Engagement` when commercially won work is real
+- optionally create the first `Workstream`
+- create follow-up tasks only if they belong in the pre-close historical record rather than the new post-close structure
 - preserve the opportunity as durable history
 
 #### E. Close lost

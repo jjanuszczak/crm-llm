@@ -86,9 +86,19 @@ The canonical schema is in `docs/schema-spec.md`. Use that file as the source of
   - `Lead -> Organization + Contact + Account + Opportunity`
 
 ### Opportunities
-- Concrete commercial or strategic engagements
-- This is the operational center of gravity when active work exists
-- Often represents John's potential or active mandate with a company or founder
+- Concrete pre-close commercial pursuits
+- This is the operational center of gravity while work is still pre-close
+- Often represents John's potential mandate with a company or founder
+
+### Engagements
+- Post-close commercial and execution containers
+- Created when work is commercially won, including pilots
+- Can own multiple parallel `Workstreams`
+
+### Workstreams
+- Execution lanes within an `Engagement`
+- General enough for advisory, research, implementation, marketing, board-support, and related delivery work
+- Must always belong to an `Engagement`
 
 ### Deals
 - Fundraising inventory objects
@@ -98,6 +108,16 @@ The canonical schema is in `docs/schema-spec.md`. Use that file as the source of
 ### Notes
 - Durable strategic or contextual memory
 - Not raw intake
+- Still the primary durable knowledge object even as delivery and research expand
+
+### Source Artifacts
+- Canonical references to external evidence and documents
+- Used for Google Drive, Readwise, Granola, URLs, local files, and future external systems
+- `Notes` should capture durable interpretation derived from them
+
+### Finance Records
+- `Retainers`, `Invoices`, and `Payments` extend the post-close commercial model
+- These are lightweight CRM-side commercial tracking records, not a full accounting system
 
 ### Activities
 - Real events or interactions
@@ -147,6 +167,13 @@ Important practical rules:
 - It is correct to keep a company in `Deal-Flow/` while leaving the related `Opportunity` in `discovery`
 - Do not collapse the two just because both involve the same startup
 
+### Opportunity vs Engagement vs Workstream interpretation
+- `Opportunity` answers: "should this work be won?"
+- `Engagement` answers: "what commercially won work now exists?"
+- `Workstream` answers: "what execution lane exists inside that engagement?"
+- Significant pre-close effort should remain on the opportunity unless a real commercial commitment exists
+- A `Workstream` must never exist without an `Engagement`
+
 ### Contact model
 - `full-name` is canonical
 - `full--name` is legacy-only
@@ -178,21 +205,31 @@ The memory system is assembled from:
 - `Accounts`
 - `Contacts`
 - `Opportunities`
+- `Engagements`
+- `Workstreams`
 - `Leads`
 - `Deals`
 - `Notes`
+- `Source Artifacts`
+- `Retainers`
+- `Invoices`
+- `Payments`
 - `Activities`
 - `Tasks`
 - Workspace-derived telemetry
 
-When active relationship work exists, new `Notes` and `Activities` should usually attach primarily to the `Opportunity`.
+When active relationship work exists, new `Notes` and `Activities` should usually attach primarily to the most specific active commercial or execution parent.
 
 Preferred primary-parent precedence:
-1. `Opportunity`
-2. `Contact`
-3. `Account`
+1. `Workstream`
+2. `Engagement`
+3. `Opportunity`
+4. `Contact`
+5. `Account`
 
-For active commercial execution, prefer `crm-opportunity-manager` over raw record creation commands. Use lower-level create commands as sub-workflows, not the top-level operating abstraction.
+For pre-close commercial execution, prefer `crm-opportunity-manager` over raw record creation commands.
+For post-close commercial execution, prefer `crm-engagement-manager`.
+Use lower-level create commands as sub-workflows, not the top-level operating abstraction.
 
 ## Operational Loop
 
@@ -244,7 +281,7 @@ Current ingest realities worth knowing before changing the pipeline:
 - meeting-note discovery is still event-centric first; CRM-labeled Drive docs are only an additive catch-up pass
 - Granola post-ingest currently runs through local `codex exec` plus Granola MCP, not a Python-native Granola API client
 - Granola-derived Activities and Tasks dedupe by durable `source-ref` provenance
-- WhatsApp post-ingest currently reads local `wacli` state in read-only mode using its `doctor --json` probe and SQLite message store
+- WhatsApp post-ingest now checks `wacli doctor --json`, runs a bounded `wacli sync --once` when no live sync is already connected, then reads the SQLite message store in read-only mode; sync failures remain fail-open and are recorded in staging
 - WhatsApp checkpointing currently uses both `whatsapp_last_sync_at` and `whatsapp_last_rowid`
 - the WhatsApp pass is intentionally conservative: unanchored group chatter is ignored by default and unanchored direct chats require strong business signal before staging anything
 
@@ -276,6 +313,8 @@ Important settings currently recognized by ingest:
 - `crm-data/settings.json` -> `granola_post_ingest_lookback_days`
 - `crm-data/settings.json` -> `whatsapp_post_ingest_enabled`
 - `crm-data/settings.json` -> `whatsapp_post_ingest_lookback_days`
+- `crm-data/settings.json` -> `whatsapp_sync_max_db_size`
+- `crm-data/settings.json` -> `whatsapp_archive_max_messages`
 - `crm-data/settings.json` -> `whatsapp_account`
 - `crm-data/settings.json` -> `whatsapp_store_dir`
 
@@ -392,6 +431,15 @@ Most relevant skills:
 - `crm-create-task`
 - `crm-create-daily-report`
 - `crm-opportunity-manager`
+- `crm-engagement-manager`
+- `crm-create-engagement`
+- `crm-create-workstream`
+- `crm-source-artifact-manager`
+- `crm-create-source-artifact`
+- `crm-finance-manager`
+- `crm-create-retainer`
+- `crm-create-invoice`
+- `crm-create-payment`
 - `matchmaker`
 - `manage-intelligence`
 

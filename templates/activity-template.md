@@ -5,7 +5,7 @@ activity-type: "{{call | email | meeting | analysis | note-derived}}"
 status: "completed"
 owner: "{{Owner}}"
 date: "{{YYYY-MM-DD}}"
-primary-parent-type: "{{opportunity | contact | account | lead | deal}}"
+primary-parent-type: "{{opportunity | engagement | workstream | contact | account | lead | deal}}"
 primary-parent: "[[{{Primary Parent}}]]"
 secondary-links:
   - "[[{{Secondary Link 1}}]]"
